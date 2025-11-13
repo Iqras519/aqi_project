@@ -1,0 +1,2239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GreenTrack — India Air Quality Dashboard</title>
+  
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- Chart.js CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  
+  <!-- Leaflet for Map -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  
+  <style>
+    /* Theme Variables */
+    :root {
+      --bg-primary: #0a0f1c;
+      --bg-secondary: #1a2332;
+      --bg-tertiary: #2d3748;
+      --text-primary: #f7fafc;
+      --text-secondary: #cbd5e0;
+      --text-muted: #718096;
+      --card-bg: rgba(45, 55, 72, 0.8);
+      --card-border: rgba(99, 102, 241, 0.2);
+      --accent-primary: #6366f1;
+      --accent-secondary: #8b5cf6;
+      --success: #10b981;
+      --warning: #f59e0b;
+      --danger: #ef4444;
+    }
+
+    [data-theme="ocean"] {
+      --bg-primary: #0c1e2e;
+      --bg-secondary: #1e3a4a;
+      --bg-tertiary: #2d5a73;
+      --accent-primary: #3b82f6;
+      --accent-secondary: #06b6d4;
+    }
+
+    [data-theme="forest"] {
+      --bg-primary: #0d1b0d;
+      --bg-secondary: #1a2e1a;
+      --bg-tertiary: #2d4a2d;
+      --accent-primary: #22c55e;
+      --accent-secondary: #059669;
+    }
+
+    [data-theme="light"] {
+      --bg-primary: #f8fafc;
+      --bg-secondary: #f1f5f9;
+      --bg-tertiary: #e2e8f0;
+      --text-primary: #1e293b;
+      --card-bg: rgba(255, 255, 255, 0.9);
+    }
+
+    body {
+      background: linear-gradient(135deg, var(--bg-primary), var(--bg-secondary), var(--bg-tertiary));
+      color: var(--text-primary);
+      transition: all 0.5s ease;
+      min-height: 100vh;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    }
+
+    .themed-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      backdrop-filter: blur(15px) saturate(150%);
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+    }
+
+    .themed-card:hover {
+      transform: translateY(-4px);
+      box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3);
+      border-color: var(--accent-primary);
+    }
+
+    .city-card { cursor: pointer; position: relative; overflow: hidden; }
+    .view-section { display: none; animation: fadeIn 0.3s ease-in-out; }
+    .view-section.active { display: block; }
+    
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(20px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .toast-item {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      background: rgba(0,0,0,0.95);
+      color: white;
+      padding: 12px 24px;
+      border-radius: 12px;
+      z-index: 1000;
+      border: 1px solid var(--accent-primary);
+      animation: slideIn 0.3s ease-out;
+    }
+
+    @keyframes slideIn {
+      from { transform: translateX(100%); opacity: 0; }
+      to { transform: translateX(0); opacity: 1; }
+    }
+
+    .spinner {
+      width: 50px;
+      height: 50px;
+      border: 4px solid rgba(99, 102, 241, 0.2);
+      border-left: 4px solid var(--accent-primary);
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin: 0 auto;
+    }
+
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+
+    .filter-btn {
+      background: rgba(99, 102, 241, 0.2);
+      border: 1px solid var(--accent-primary);
+      transition: all 0.3s ease;
+    }
+
+    .filter-btn.active {
+      background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+      box-shadow: 0 4px 14px 0 rgba(99, 102, 241, 0.3);
+    }
+
+    .theme-btn {
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      border: 2px solid transparent;
+      cursor: pointer;
+      transition: all 0.3s ease;
+    }
+
+    .theme-btn:hover { transform: scale(1.2); border-color: white; }
+    .theme-btn.active { transform: scale(1.3); border-color: white; }
+
+    .theme-btn[data-theme="dark"] { background: linear-gradient(45deg, #6366f1, #8b5cf6); }
+    .theme-btn[data-theme="ocean"] { background: linear-gradient(45deg, #0ea5e9, #3b82f6); }
+    .theme-btn[data-theme="forest"] { background: linear-gradient(45deg, #22c55e, #059669); }
+    .theme-btn[data-theme="light"] { background: linear-gradient(45deg, #f8fafc, #e2e8f0); }
+
+    .btn-primary {
+      background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+      transition: all 0.3s ease;
+    }
+
+    .btn-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 20px rgba(99, 102, 241, 0.4);
+    }
+
+    .search-box {
+      background: rgba(26, 35, 50, 0.8);
+      border: 2px solid rgba(99, 102, 241, 0.3);
+      border-radius: 12px;
+      padding: 12px 16px;
+      color: var(--text-primary);
+      transition: all 0.3s ease;
+    }
+
+    .search-box:focus {
+      border-color: var(--accent-primary);
+      outline: none;
+    }
+
+    .modal {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.8);
+      z-index: 100;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .modal.active { display: flex; }
+
+    .modal-content {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 16px;
+      max-width: 900px;
+      width: 95%;
+      max-height: 90vh;
+      overflow-y: auto;
+      padding: 32px;
+    }
+
+    .detail-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 16px;
+      margin: 16px 0;
+    }
+
+    .detail-item {
+      background: rgba(99, 102, 241, 0.1);
+      padding: 16px;
+      border-radius: 12px;
+      text-align: center;
+    }
+
+    .detail-label {
+      font-size: 11px;
+      color: #9ca3af;
+      margin-bottom: 8px;
+      font-weight: 600;
+    }
+
+    .detail-value {
+      font-size: 20px;
+      font-weight: 700;
+    }
+
+    .no-data-card {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    /* Glassmorphism Effects */
+    .glass-card {
+      background: rgba(255, 255, 255, 0.05);
+      backdrop-filter: blur(20px) saturate(180%);
+      -webkit-backdrop-filter: blur(20px) saturate(180%);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);
+    }
+
+    .weather-info {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 8px;
+      margin-top: 12px;
+      font-size: 12px;
+    }
+
+    .weather-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px;
+      background: rgba(99, 102, 241, 0.1);
+      border-radius: 8px;
+    }
+
+    .news-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 16px;
+      overflow: hidden;
+      transition: all 0.3s ease;
+      cursor: pointer;
+    }
+
+    .news-card:hover {
+      transform: translateY(-4px);
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+      border-color: var(--accent-primary);
+    }
+
+    .news-image {
+      width: 100%;
+      height: 200px;
+      object-fit: cover;
+    }
+
+    .news-content {
+      padding: 20px;
+    }
+
+    .news-category {
+      display: inline-block;
+      padding: 4px 12px;
+      background: var(--accent-primary);
+      color: white;
+      border-radius: 12px;
+      font-size: 11px;
+      font-weight: 600;
+      margin-bottom: 12px;
+    }
+
+    .news-title {
+      font-size: 18px;
+      font-weight: 700;
+      margin-bottom: 8px;
+      line-height: 1.4;
+      color: var(--text-primary);
+    }
+
+    .news-summary {
+      font-size: 14px;
+      color: var(--text-secondary);
+      line-height: 1.6;
+      margin-bottom: 12px;
+      display: -webkit-box;
+      -webkit-line-clamp: 3;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    .news-meta {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    #map {
+      height: 600px;
+      width: 100%;
+      border-radius: 16px;
+      overflow: hidden;
+      border: 2px solid var(--card-border);
+    }
+
+    .trend-chart {
+      background: var(--card-bg);
+      padding: 24px;
+      border-radius: 16px;
+      border: 1px solid var(--card-border);
+    }
+
+    .stat-card {
+      background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+      padding: 24px;
+      border-radius: 16px;
+      color: white;
+      text-align: center;
+    }
+
+    .stat-value {
+      font-size: 36px;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+
+    .stat-label {
+      font-size: 14px;
+      opacity: 0.9;
+    }
+
+    .pollutant-bar {
+      height: 8px;
+      background: rgba(255, 255, 255, 0.2);
+      border-radius: 4px;
+      overflow: hidden;
+      margin-top: 8px;
+    }
+
+    .pollutant-fill {
+      height: 100%;
+      background: linear-gradient(90deg, var(--accent-primary), var(--accent-secondary));
+      transition: width 0.5s ease;
+    }
+
+    @keyframes slideUp {
+      from {
+        opacity: 0;
+        transform: translateY(30px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .animate-in {
+      animation: slideUp 0.5s ease-out forwards;
+    }
+
+    .loading-skeleton {
+      background: linear-gradient(90deg, #2d3748 25%, #4a5568 50%, #2d3748 75%);
+      background-size: 200% 100%;
+      animation: shimmer 1.5s infinite;
+    }
+
+    @keyframes shimmer {
+      0% { background-position: 200% 0; }
+      100% { background-position: -200% 0; }
+    }
+  </style>
+</head>
+<body class="min-h-screen" data-theme="dark">
+  
+  <!-- Header -->
+  <header class="sticky top-0 z-40 bg-slate-900/95 backdrop-blur-lg border-b border-indigo-500/20">
+    <div class="max-w-7xl mx-auto px-4 py-4">
+      <div class="flex items-center justify-between flex-wrap gap-4">
+        <div class="flex items-center gap-4">
+          <div class="w-12 h-12 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl flex items-center justify-center text-2xl">
+            🌍
+          </div>
+          <div>
+            <h1 class="text-2xl font-bold bg-gradient-to-r from-indigo-400 via-purple-400 to-cyan-400 bg-clip-text text-transparent">
+              GreenTrack India
+            </h1>
+            <p class="text-xs text-gray-400">Real-Time Air Quality Monitor</p>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-3 flex-wrap">
+          <div class="flex gap-2 bg-slate-800/50 p-2 rounded-lg">
+            <div class="theme-btn active" data-theme="dark" onclick="changeTheme('dark')"></div>
+            <div class="theme-btn" data-theme="ocean" onclick="changeTheme('ocean')"></div>
+            <div class="theme-btn" data-theme="forest" onclick="changeTheme('forest')"></div>
+            <div class="theme-btn" data-theme="light" onclick="changeTheme('light')"></div>
+          </div>
+
+          <button id="location-btn" onclick="getCurrentLocation()" class="px-4 py-2 bg-green-600 hover:bg-green-700 rounded-lg text-sm font-medium text-white">
+            📍 My Location
+          </button>
+          
+          <input 
+            type="text" 
+            id="city-search" 
+            placeholder="🔍 Search cities..." 
+            class="search-box w-64 text-sm"
+            onkeyup="filterCities(this.value)"
+          />
+        </div>
+
+        <nav class="flex gap-2 flex-wrap">
+          <button onclick="showView('dashboard')" class="px-4 py-2 rounded-lg text-sm font-medium btn-primary text-white">
+            🏠 Dashboard
+          </button>
+          <button onclick="showView('analytics')" class="px-4 py-2 rounded-lg bg-slate-700/80 hover:bg-slate-600 text-sm font-medium text-white">
+            📊 Analytics
+          </button>
+          <button onclick="showView('comparison')" class="px-4 py-2 rounded-lg bg-slate-700/80 hover:bg-slate-600 text-sm font-medium text-white">
+            🔄 Compare
+          </button>
+          <button onclick="showView('map')" class="px-4 py-2 rounded-lg bg-slate-700/80 hover:bg-slate-600 text-sm font-medium text-white">
+            🗺️ Map
+          </button>
+          <button onclick="showView('news')" class="px-4 py-2 rounded-lg bg-slate-700/80 hover:bg-slate-600 text-sm font-medium text-white">
+            📰 News
+          </button>
+        </nav>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Content -->
+  <main class="max-w-7xl mx-auto p-6">
+
+    <!-- Dashboard View -->
+    <section id="view-dashboard" class="view-section active">
+      <div class="mb-8">
+        <div class="flex items-center justify-between mb-6 flex-wrap gap-4">
+          <div>
+            <h2 class="text-4xl font-bold bg-gradient-to-r from-indigo-400 via-purple-400 to-cyan-400 bg-clip-text text-transparent mb-2">
+              Air Quality Dashboard
+            </h2>
+            <p class="text-gray-400">Live data from <span id="loaded-cities">0</span> Indian cities</p>
+          </div>
+          <button onclick="refreshData()" class="px-4 py-2 btn-primary text-white rounded-lg text-sm font-medium">
+            🔄 Refresh
+          </button>
+        </div>
+
+        <!-- Filters -->
+        <div class="flex gap-3 mb-6 flex-wrap">
+          <button onclick="filterByRegion('all')" class="filter-btn active px-4 py-2 rounded-lg text-sm font-medium text-white" data-filter="all">All</button>
+          <button onclick="filterByRegion('north')" class="filter-btn px-4 py-2 rounded-lg text-sm font-medium text-white" data-filter="north">North</button>
+          <button onclick="filterByRegion('south')" class="filter-btn px-4 py-2 rounded-lg text-sm font-medium text-white" data-filter="south">South</button>
+          <button onclick="filterByRegion('east')" class="filter-btn px-4 py-2 rounded-lg text-sm font-medium text-white" data-filter="east">East</button>
+          <button onclick="filterByRegion('west')" class="filter-btn px-4 py-2 rounded-lg text-sm font-medium text-white" data-filter="west">West</button>
+        </div>
+      </div>
+
+      <div id="loading" class="text-center py-16">
+        <div class="spinner mb-6"></div>
+        <h3 class="text-xl font-bold mb-2">Loading Data...</h3>
+      </div>
+
+      <div id="error" style="display: none;" class="bg-red-900/30 border border-red-700/50 rounded-xl p-6 mb-8">
+        <p class="font-bold text-lg text-red-200">Error Loading Data</p>
+        <p class="text-red-300/80 text-sm" id="error-message"></p>
+        <button onclick="refreshData()" class="mt-3 px-4 py-2 bg-red-700/50 rounded-lg text-sm">Try Again</button>
+      </div>
+
+      <div id="city-grid" class="grid gap-6 grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"></div>
+      
+      <!-- Statistics Overview -->
+      <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mt-8">
+        <div class="stat-card">
+          <div class="stat-value" id="stat-cities">0</div>
+          <div class="stat-label">Total Cities</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" id="stat-good">0</div>
+          <div class="stat-label">Good AQI</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" id="stat-poor">0</div>
+          <div class="stat-label">Poor/Severe AQI</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" id="stat-avg">0</div>
+          <div class="stat-label">Average AQI</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Analytics View -->
+    <section id="view-analytics" class="view-section">
+      <h2 class="text-4xl font-bold mb-8">Analytics</h2>
+      <div class="themed-card p-6 rounded-xl">
+        <canvas id="analytics-chart" style="height: 400px;"></canvas>
+      </div>
+    </section>
+
+    <!-- Comparison View -->
+    <section id="view-comparison" class="view-section">
+      <h2 class="text-4xl font-bold mb-8">Compare Cities</h2>
+      <div class="grid lg:grid-cols-2 gap-6 mb-8">
+        <div class="themed-card p-6 rounded-xl">
+          <h3 class="text-xl font-bold mb-4">Select Cities</h3>
+          <div class="space-y-3">
+            <select id="compare-city-1" class="search-box w-full" onchange="updateComparison()">
+              <option value="">Select City 1...</option>
+            </select>
+            <select id="compare-city-2" class="search-box w-full" onchange="updateComparison()">
+              <option value="">Select City 2...</option>
+            </select>
+          </div>
+        </div>
+        <div class="themed-card p-6 rounded-xl">
+          <h3 class="text-xl font-bold mb-4">Stats</h3>
+          <div id="comparison-stats"></div>
+        </div>
+      </div>
+      <div id="comparison-results" class="grid gap-6 lg:grid-cols-2"></div>
+    </section>
+
+    <!-- Map View -->
+    <section id="view-map" class="view-section">
+      <h2 class="text-4xl font-bold mb-8 bg-gradient-to-r from-indigo-400 via-purple-400 to-cyan-400 bg-clip-text text-transparent">
+        India AQI Heatmap
+      </h2>
+      <div class="glass-card p-6 rounded-xl mb-6">
+        <div id="map"></div>
+      </div>
+      <div class="grid grid-cols-2 md:grid-cols-6 gap-4 mt-6">
+        <div class="text-center p-3 rounded-lg" style="background: #00e400;">
+          <div class="font-bold text-white">Good</div>
+          <div class="text-sm text-white opacity-90">0-50</div>
+        </div>
+        <div class="text-center p-3 rounded-lg" style="background: #ffff00; color: #000;">
+          <div class="font-bold">Moderate</div>
+          <div class="text-sm opacity-70">51-100</div>
+        </div>
+        <div class="text-center p-3 rounded-lg" style="background: #ff7e00;">
+          <div class="font-bold text-white">Unhealthy (SG)</div>
+          <div class="text-sm text-white opacity-90">101-150</div>
+        </div>
+        <div class="text-center p-3 rounded-lg" style="background: #ff0000;">
+          <div class="font-bold text-white">Unhealthy</div>
+          <div class="text-sm text-white opacity-90">151-200</div>
+        </div>
+        <div class="text-center p-3 rounded-lg" style="background: #8f3f97;">
+          <div class="font-bold text-white">Very Unhealthy</div>
+          <div class="text-sm text-white opacity-90">201-300</div>
+        </div>
+        <div class="text-center p-3 rounded-lg" style="background: #7e0023;">
+          <div class="font-bold text-white">Hazardous</div>
+          <div class="text-sm text-white opacity-90">300+</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- News View -->
+    <section id="view-news" class="view-section">
+      <h2 class="text-4xl font-bold mb-8 bg-gradient-to-r from-indigo-400 via-purple-400 to-cyan-400 bg-clip-text text-transparent">
+        Environment & Pollution News
+      </h2>
+      
+      <!-- News Filters -->
+      <div class="flex gap-3 mb-6 flex-wrap">
+        <button onclick="filterNews('all')" class="news-filter-btn active px-4 py-2 rounded-lg text-sm font-medium text-white" data-category="all">All News</button>
+        <button onclick="filterNews('aqi')" class="news-filter-btn px-4 py-2 rounded-lg text-sm font-medium text-white" data-category="aqi">AQI Updates</button>
+        <button onclick="filterNews('pollution')" class="news-filter-btn px-4 py-2 rounded-lg text-sm font-medium text-white" data-category="pollution">Pollution</button>
+        <button onclick="filterNews('climate')" class="news-filter-btn px-4 py-2 rounded-lg text-sm font-medium text-white" data-category="climate">Climate Change</button>
+        <button onclick="filterNews('policy')" class="news-filter-btn px-4 py-2 rounded-lg text-sm font-medium text-white" data-category="policy">Environment Policy</button>
+      </div>
+
+      <div id="news-loading" class="text-center py-16" style="display: none;">
+        <div class="spinner mb-6"></div>
+        <h3 class="text-xl font-bold mb-2">Loading News...</h3>
+      </div>
+
+      <div id="news-grid" class="grid gap-6 grid-cols-1 md:grid-cols-2 lg:grid-cols-3"></div>
+    </section>
+
+  </main>
+
+  <!-- Modal -->
+  <div id="city-detail-modal" class="modal">
+    <div class="modal-content">
+      <div class="flex justify-between items-center mb-6">
+        <h2 class="text-3xl font-bold" id="modal-city-name">City Details</h2>
+        <button onclick="closeModal()" class="text-4xl hover:text-red-500">&times;</button>
+      </div>
+      <div id="modal-content"></div>
+    </div>
+  </div>
+
+  <script>
+    const API_BASE = 'https://api.waqi.info';
+    const API_KEY = 'b784e806f701bc0a79adaf50855b32f8acc0d234';
+    
+    // Comprehensive list of 600+ Indian cities from all states and union territories
+    const INDIAN_CITIES = [
+      // Andhra Pradesh
+      { name: 'Visakhapatnam', region: 'south', state: 'Andhra Pradesh' },
+      { name: 'Vijayawada', region: 'south', state: 'Andhra Pradesh' },
+      { name: 'Guntur', region: 'south', state: 'Andhra Pradesh' },
+      { name: 'Nellore', region: 'south', state: 'Andhra Pradesh' },
+      { name: 'Tirupati', region: 'south', state: 'Andhra Pradesh' },
+      { name: 'Kakinada', region: 'south', state: 'Andhra Pradesh' },
+      { name: 'Rajahmundry', region: 'south', state: 'Andhra Pradesh' },
+      { name: 'Kadapa', region: 'south', state: 'Andhra Pradesh' },
+      { name: 'Anantapur', region: 'south', state: 'Andhra Pradesh' },
+      { name: 'Vizianagaram', region: 'south', state: 'Andhra Pradesh' },
+      { name: 'Eluru', region: 'south', state: 'Andhra Pradesh' },
+      { name: 'Nandyal', region: 'south', state: 'Andhra Pradesh' },
+      { name: 'Kurnool', region: 'south', state: 'Andhra Pradesh' },
+      { name: 'Ongole', region: 'south', state: 'Andhra Pradesh' },
+      { name: 'Machilipatnam', region: 'south', state: 'Andhra Pradesh' },
+      { name: 'Tenali', region: 'south', state: 'Andhra Pradesh' },
+      { name: 'Chittoor', region: 'south', state: 'Andhra Pradesh' },
+      { name: 'Hindupur', region: 'south', state: 'Andhra Pradesh' },
+      { name: 'Proddatur', region: 'south', state: 'Andhra Pradesh' },
+      { name: 'Bhimavaram', region: 'south', state: 'Andhra Pradesh' },
+      { name: 'Madanapalle', region: 'south', state: 'Andhra Pradesh' },
+      { name: 'Guntakal', region: 'south', state: 'Andhra Pradesh' },
+      { name: 'Dharmavaram', region: 'south', state: 'Andhra Pradesh' },
+      { name: 'Gudivada', region: 'south', state: 'Andhra Pradesh' },
+      { name: 'Srikakulam', region: 'south', state: 'Andhra Pradesh' },
+      { name: 'Narasaraopet', region: 'south', state: 'Andhra Pradesh' },
+      { name: 'Tadipatri', region: 'south', state: 'Andhra Pradesh' },
+      { name: 'Tadepalligudem', region: 'south', state: 'Andhra Pradesh' },
+      { name: 'Chilakaluripet', region: 'south', state: 'Andhra Pradesh' },
+      { name: 'Kavali', region: 'south', state: 'Andhra Pradesh' },
+
+      // Arunachal Pradesh
+      { name: 'Itanagar', region: 'east', state: 'Arunachal Pradesh' },
+      { name: 'Naharlagun', region: 'east', state: 'Arunachal Pradesh' },
+      { name: 'Pasighat', region: 'east', state: 'Arunachal Pradesh' },
+      { name: 'Tawang', region: 'east', state: 'Arunachal Pradesh' },
+      { name: 'Ziro', region: 'east', state: 'Arunachal Pradesh' },
+      { name: 'Bomdila', region: 'east', state: 'Arunachal Pradesh' },
+      { name: 'Tezu', region: 'east', state: 'Arunachal Pradesh' },
+      { name: 'Seppa', region: 'east', state: 'Arunachal Pradesh' },
+      { name: 'Along', region: 'east', state: 'Arunachal Pradesh' },
+      { name: 'Changlang', region: 'east', state: 'Arunachal Pradesh' },
+
+      // Assam
+      { name: 'Guwahati', region: 'east', state: 'Assam' },
+      { name: 'Silchar', region: 'east', state: 'Assam' },
+      { name: 'Dibrugarh', region: 'east', state: 'Assam' },
+      { name: 'Jorhat', region: 'east', state: 'Assam' },
+      { name: 'Nagaon', region: 'east', state: 'Assam' },
+      { name: 'Tinsukia', region: 'east', state: 'Assam' },
+      { name: 'Tezpur', region: 'east', state: 'Assam' },
+      { name: 'Bongaigaon', region: 'east', state: 'Assam' },
+      { name: 'Dhubri', region: 'east', state: 'Assam' },
+      { name: 'Sivasagar', region: 'east', state: 'Assam' },
+      { name: 'Goalpara', region: 'east', state: 'Assam' },
+      { name: 'Karimganj', region: 'east', state: 'Assam' },
+      { name: 'Diphu', region: 'east', state: 'Assam' },
+      { name: 'North Lakhimpur', region: 'east', state: 'Assam' },
+      { name: 'Haflong', region: 'east', state: 'Assam' },
+      { name: 'Hojai', region: 'east', state: 'Assam' },
+      { name: 'Mangaldoi', region: 'east', state: 'Assam' },
+      { name: 'Nalbari', region: 'east', state: 'Assam' },
+      { name: 'Barpeta', region: 'east', state: 'Assam' },
+      { name: 'Golaghat', region: 'east', state: 'Assam' },
+      { name: 'Kokrajhar', region: 'east', state: 'Assam' },
+      { name: 'Hailakandi', region: 'east', state: 'Assam' },
+
+      // Bihar
+      { name: 'Patna', region: 'east', state: 'Bihar' },
+      { name: 'Gaya', region: 'east', state: 'Bihar' },
+      { name: 'Bhagalpur', region: 'east', state: 'Bihar' },
+      { name: 'Muzaffarpur', region: 'east', state: 'Bihar' },
+      { name: 'Darbhanga', region: 'east', state: 'Bihar' },
+      { name: 'Purnia', region: 'east', state: 'Bihar' },
+      { name: 'Arrah', region: 'east', state: 'Bihar' },
+      { name: 'Begusarai', region: 'east', state: 'Bihar' },
+      { name: 'Katihar', region: 'east', state: 'Bihar' },
+      { name: 'Munger', region: 'east', state: 'Bihar' },
+      { name: 'Chhapra', region: 'east', state: 'Bihar' },
+      { name: 'Saharsa', region: 'east', state: 'Bihar' },
+      { name: 'Sasaram', region: 'east', state: 'Bihar' },
+      { name: 'Hajipur', region: 'east', state: 'Bihar' },
+      { name: 'Dehri', region: 'east', state: 'Bihar' },
+      { name: 'Siwan', region: 'east', state: 'Bihar' },
+      { name: 'Motihari', region: 'east', state: 'Bihar' },
+      { name: 'Nawada', region: 'east', state: 'Bihar' },
+      { name: 'Bagaha', region: 'east', state: 'Bihar' },
+      { name: 'Buxar', region: 'east', state: 'Bihar' },
+      { name: 'Kishanganj', region: 'east', state: 'Bihar' },
+      { name: 'Sitamarhi', region: 'east', state: 'Bihar' },
+      { name: 'Jamalpur', region: 'east', state: 'Bihar' },
+      { name: 'Jehanabad', region: 'east', state: 'Bihar' },
+      { name: 'Aurangabad', region: 'east', state: 'Bihar' },
+      { name: 'Bettiah', region: 'east', state: 'Bihar' },
+      { name: 'Madhubani', region: 'east', state: 'Bihar' },
+      { name: 'Samastipur', region: 'east', state: 'Bihar' },
+      { name: 'Chapra', region: 'east', state: 'Bihar' },
+      { name: 'Madhepura', region: 'east', state: 'Bihar' },
+
+      // Chhattisgarh
+      { name: 'Raipur', region: 'central', state: 'Chhattisgarh' },
+      { name: 'Bhilai', region: 'central', state: 'Chhattisgarh' },
+      { name: 'Bilaspur', region: 'central', state: 'Chhattisgarh' },
+      { name: 'Korba', region: 'central', state: 'Chhattisgarh' },
+      { name: 'Durg', region: 'central', state: 'Chhattisgarh' },
+      { name: 'Rajnandgaon', region: 'central', state: 'Chhattisgarh' },
+      { name: 'Jagdalpur', region: 'central', state: 'Chhattisgarh' },
+      { name: 'Raigarh', region: 'central', state: 'Chhattisgarh' },
+      { name: 'Ambikapur', region: 'central', state: 'Chhattisgarh' },
+      { name: 'Mahasamund', region: 'central', state: 'Chhattisgarh' },
+      { name: 'Dhamtari', region: 'central', state: 'Chhattisgarh' },
+      { name: 'Chirmiri', region: 'central', state: 'Chhattisgarh' },
+      { name: 'Bhatapara', region: 'central', state: 'Chhattisgarh' },
+      { name: 'Dalli-Rajhara', region: 'central', state: 'Chhattisgarh' },
+      { name: 'Kawardha', region: 'central', state: 'Chhattisgarh' },
+      { name: 'Tilda Newra', region: 'central', state: 'Chhattisgarh' },
+      { name: 'Mungeli', region: 'central', state: 'Chhattisgarh' },
+
+      // Goa
+      { name: 'Panaji', region: 'west', state: 'Goa' },
+      { name: 'Vasco da Gama', region: 'west', state: 'Goa' },
+      { name: 'Margao', region: 'west', state: 'Goa' },
+      { name: 'Mapusa', region: 'west', state: 'Goa' },
+      { name: 'Ponda', region: 'west', state: 'Goa' },
+      { name: 'Bicholim', region: 'west', state: 'Goa' },
+      { name: 'Curchorem', region: 'west', state: 'Goa' },
+      { name: 'Sanquelim', region: 'west', state: 'Goa' },
+
+      // Gujarat
+      { name: 'Ahmedabad', region: 'west', state: 'Gujarat' },
+      { name: 'Surat', region: 'west', state: 'Gujarat' },
+      { name: 'Vadodara', region: 'west', state: 'Gujarat' },
+      { name: 'Rajkot', region: 'west', state: 'Gujarat' },
+      { name: 'Bhavnagar', region: 'west', state: 'Gujarat' },
+      { name: 'Jamnagar', region: 'west', state: 'Gujarat' },
+      { name: 'Junagadh', region: 'west', state: 'Gujarat' },
+      { name: 'Gandhinagar', region: 'west', state: 'Gujarat' },
+      { name: 'Anand', region: 'west', state: 'Gujarat' },
+      { name: 'Nadiad', region: 'west', state: 'Gujarat' },
+      { name: 'Mehsana', region: 'west', state: 'Gujarat' },
+      { name: 'Gandhidham', region: 'west', state: 'Gujarat' },
+      { name: 'Vapi', region: 'west', state: 'Gujarat' },
+      { name: 'Navsari', region: 'west', state: 'Gujarat' },
+      { name: 'Bharuch', region: 'west', state: 'Gujarat' },
+      { name: 'Morbi', region: 'west', state: 'Gujarat' },
+      { name: 'Surendranagar', region: 'west', state: 'Gujarat' },
+      { name: 'Porbandar', region: 'west', state: 'Gujarat' },
+      { name: 'Veraval', region: 'west', state: 'Gujarat' },
+      { name: 'Palanpur', region: 'west', state: 'Gujarat' },
+      { name: 'Godhra', region: 'west', state: 'Gujarat' },
+      { name: 'Bhuj', region: 'west', state: 'Gujarat' },
+      { name: 'Ankleshwar', region: 'west', state: 'Gujarat' },
+      { name: 'Botad', region: 'west', state: 'Gujarat' },
+      { name: 'Amreli', region: 'west', state: 'Gujarat' },
+      { name: 'Deesa', region: 'west', state: 'Gujarat' },
+      { name: 'Jetpur', region: 'west', state: 'Gujarat' },
+      { name: 'Kalol', region: 'west', state: 'Gujarat' },
+      { name: 'Wadhwan', region: 'west', state: 'Gujarat' },
+      { name: 'Patan', region: 'west', state: 'Gujarat' },
+      { name: 'Sidhpur', region: 'west', state: 'Gujarat' },
+      { name: 'Vyara', region: 'west', state: 'Gujarat' },
+      { name: 'Modasa', region: 'west', state: 'Gujarat' },
+      { name: 'Dahod', region: 'west', state: 'Gujarat' },
+
+      // Haryana
+      { name: 'Faridabad', region: 'north', state: 'Haryana' },
+      { name: 'Gurgaon', region: 'north', state: 'Haryana' },
+      { name: 'Panipat', region: 'north', state: 'Haryana' },
+      { name: 'Ambala', region: 'north', state: 'Haryana' },
+      { name: 'Yamunanagar', region: 'north', state: 'Haryana' },
+      { name: 'Rohtak', region: 'north', state: 'Haryana' },
+      { name: 'Hisar', region: 'north', state: 'Haryana' },
+      { name: 'Karnal', region: 'north', state: 'Haryana' },
+      { name: 'Sonipat', region: 'north', state: 'Haryana' },
+      { name: 'Panchkula', region: 'north', state: 'Haryana' },
+      { name: 'Bhiwani', region: 'north', state: 'Haryana' },
+      { name: 'Sirsa', region: 'north', state: 'Haryana' },
+      { name: 'Bahadurgarh', region: 'north', state: 'Haryana' },
+      { name: 'Jind', region: 'north', state: 'Haryana' },
+      { name: 'Rewari', region: 'north', state: 'Haryana' },
+      { name: 'Palwal', region: 'north', state: 'Haryana' },
+      { name: 'Kaithal', region: 'north', state: 'Haryana' },
+      { name: 'Hansi', region: 'north', state: 'Haryana' },
+      { name: 'Narnaul', region: 'north', state: 'Haryana' },
+      { name: 'Fatehabad', region: 'north', state: 'Haryana' },
+      { name: 'Gohana', region: 'north', state: 'Haryana' },
+      { name: 'Tohana', region: 'north', state: 'Haryana' },
+      { name: 'Jagadhri', region: 'north', state: 'Haryana' },
+
+      // Himachal Pradesh
+      { name: 'Shimla', region: 'north', state: 'Himachal Pradesh' },
+      { name: 'Dharamshala', region: 'north', state: 'Himachal Pradesh' },
+      { name: 'Mandi', region: 'north', state: 'Himachal Pradesh' },
+      { name: 'Solan', region: 'north', state: 'Himachal Pradesh' },
+      { name: 'Kullu', region: 'north', state: 'Himachal Pradesh' },
+      { name: 'Hamirpur', region: 'north', state: 'Himachal Pradesh' },
+      { name: 'Una', region: 'north', state: 'Himachal Pradesh' },
+      { name: 'Bilaspur', region: 'north', state: 'Himachal Pradesh' },
+      { name: 'Palampur', region: 'north', state: 'Himachal Pradesh' },
+      { name: 'Chamba', region: 'north', state: 'Himachal Pradesh' },
+      { name: 'Kangra', region: 'north', state: 'Himachal Pradesh' },
+      { name: 'Nahan', region: 'north', state: 'Himachal Pradesh' },
+      { name: 'Manali', region: 'north', state: 'Himachal Pradesh' },
+      { name: 'Baddi', region: 'north', state: 'Himachal Pradesh' },
+      { name: 'Nalagarh', region: 'north', state: 'Himachal Pradesh' },
+
+      // Jharkhand
+      { name: 'Ranchi', region: 'east', state: 'Jharkhand' },
+      { name: 'Jamshedpur', region: 'east', state: 'Jharkhand' },
+      { name: 'Dhanbad', region: 'east', state: 'Jharkhand' },
+      { name: 'Bokaro', region: 'east', state: 'Jharkhand' },
+      { name: 'Deoghar', region: 'east', state: 'Jharkhand' },
+      { name: 'Hazaribagh', region: 'east', state: 'Jharkhand' },
+      { name: 'Giridih', region: 'east', state: 'Jharkhand' },
+      { name: 'Ramgarh', region: 'east', state: 'Jharkhand' },
+      { name: 'Medininagar', region: 'east', state: 'Jharkhand' },
+      { name: 'Chaibasa', region: 'east', state: 'Jharkhand' },
+      { name: 'Phusro', region: 'east', state: 'Jharkhand' },
+      { name: 'Adityapur', region: 'east', state: 'Jharkhand' },
+      { name: 'Chirkunda', region: 'east', state: 'Jharkhand' },
+      { name: 'Chas', region: 'east', state: 'Jharkhand' },
+      { name: 'Sahibganj', region: 'east', state: 'Jharkhand' },
+      { name: 'Gumia', region: 'east', state: 'Jharkhand' },
+      { name: 'Dumka', region: 'east', state: 'Jharkhand' },
+      { name: 'Madhupur', region: 'east', state: 'Jharkhand' },
+
+      // Karnataka
+      { name: 'Bangalore', region: 'south', state: 'Karnataka' },
+      { name: 'Mysore', region: 'south', state: 'Karnataka' },
+      { name: 'Mangalore', region: 'south', state: 'Karnataka' },
+      { name: 'Hubli', region: 'south', state: 'Karnataka' },
+      { name: 'Belgaum', region: 'south', state: 'Karnataka' },
+      { name: 'Gulbarga', region: 'south', state: 'Karnataka' },
+      { name: 'Davangere', region: 'south', state: 'Karnataka' },
+      { name: 'Bellary', region: 'south', state: 'Karnataka' },
+      { name: 'Bijapur', region: 'south', state: 'Karnataka' },
+      { name: 'Shimoga', region: 'south', state: 'Karnataka' },
+      { name: 'Tumkur', region: 'south', state: 'Karnataka' },
+      { name: 'Raichur', region: 'south', state: 'Karnataka' },
+      { name: 'Bidar', region: 'south', state: 'Karnataka' },
+      { name: 'Hospet', region: 'south', state: 'Karnataka' },
+      { name: 'Hassan', region: 'south', state: 'Karnataka' },
+      { name: 'Udupi', region: 'south', state: 'Karnataka' },
+      { name: 'Chitradurga', region: 'south', state: 'Karnataka' },
+      { name: 'Mandya', region: 'south', state: 'Karnataka' },
+      { name: 'Bagalkot', region: 'south', state: 'Karnataka' },
+      { name: 'Gadag', region: 'south', state: 'Karnataka' },
+      { name: 'Koppal', region: 'south', state: 'Karnataka' },
+      { name: 'Yadgir', region: 'south', state: 'Karnataka' },
+      { name: 'Chikmagalur', region: 'south', state: 'Karnataka' },
+      { name: 'Kolar', region: 'south', state: 'Karnataka' },
+      { name: 'Vijayapura', region: 'south', state: 'Karnataka' },
+      { name: 'Karwar', region: 'south', state: 'Karnataka' },
+      { name: 'Bhadravati', region: 'south', state: 'Karnataka' },
+      { name: 'Ranebennur', region: 'south', state: 'Karnataka' },
+      { name: 'Sirsi', region: 'south', state: 'Karnataka' },
+
+      // Kerala
+      { name: 'Thiruvananthapuram', region: 'south', state: 'Kerala' },
+      { name: 'Kochi', region: 'south', state: 'Kerala' },
+      { name: 'Kozhikode', region: 'south', state: 'Kerala' },
+      { name: 'Thrissur', region: 'south', state: 'Kerala' },
+      { name: 'Kollam', region: 'south', state: 'Kerala' },
+      { name: 'Kannur', region: 'south', state: 'Kerala' },
+      { name: 'Alappuzha', region: 'south', state: 'Kerala' },
+      { name: 'Palakkad', region: 'south', state: 'Kerala' },
+      { name: 'Malappuram', region: 'south', state: 'Kerala' },
+      { name: 'Kottayam', region: 'south', state: 'Kerala' },
+      { name: 'Kasaragod', region: 'south', state: 'Kerala' },
+      { name: 'Pathanamthitta', region: 'south', state: 'Kerala' },
+      { name: 'Wayanad', region: 'south', state: 'Kerala' },
+      { name: 'Idukki', region: 'south', state: 'Kerala' },
+      { name: 'Thalassery', region: 'south', state: 'Kerala' },
+      { name: 'Ponnani', region: 'south', state: 'Kerala' },
+      { name: 'Perinthalmanna', region: 'south', state: 'Kerala' },
+      { name: 'Tirur', region: 'south', state: 'Kerala' },
+      { name: 'Kanhangad', region: 'south', state: 'Kerala' },
+      { name: 'Payyanur', region: 'south', state: 'Kerala' },
+      { name: 'Koyilandy', region: 'south', state: 'Kerala' },
+      { name: 'Ottapalam', region: 'south', state: 'Kerala' },
+      { name: 'Cherthala', region: 'south', state: 'Kerala' },
+      { name: 'Changanassery', region: 'south', state: 'Kerala' },
+
+      // Madhya Pradesh
+      { name: 'Indore', region: 'central', state: 'Madhya Pradesh' },
+      { name: 'Bhopal', region: 'central', state: 'Madhya Pradesh' },
+      { name: 'Jabalpur', region: 'central', state: 'Madhya Pradesh' },
+      { name: 'Gwalior', region: 'central', state: 'Madhya Pradesh' },
+      { name: 'Ujjain', region: 'central', state: 'Madhya Pradesh' },
+      { name: 'Sagar', region: 'central', state: 'Madhya Pradesh' },
+      { name: 'Dewas', region: 'central', state: 'Madhya Pradesh' },
+      { name: 'Satna', region: 'central', state: 'Madhya Pradesh' },
+      { name: 'Ratlam', region: 'central', state: 'Madhya Pradesh' },
+      { name: 'Rewa', region: 'central', state: 'Madhya Pradesh' },
+      { name: 'Murwara', region: 'central', state: 'Madhya Pradesh' },
+      { name: 'Singrauli', region: 'central', state: 'Madhya Pradesh' },
+      { name: 'Burhanpur', region: 'central', state: 'Madhya Pradesh' },
+      { name: 'Khandwa', region: 'central', state: 'Madhya Pradesh' },
+      { name: 'Morena', region: 'central', state: 'Madhya Pradesh' },
+      { name: 'Bhind', region: 'central', state: 'Madhya Pradesh' },
+      { name: 'Chhindwara', region: 'central', state: 'Madhya Pradesh' },
+      { name: 'Guna', region: 'central', state: 'Madhya Pradesh' },
+      { name: 'Shivpuri', region: 'central', state: 'Madhya Pradesh' },
+      { name: 'Vidisha', region: 'central', state: 'Madhya Pradesh' },
+      { name: 'Damoh', region: 'central', state: 'Madhya Pradesh' },
+      { name: 'Mandsaur', region: 'central', state: 'Madhya Pradesh' },
+      { name: 'Khargone', region: 'central', state: 'Madhya Pradesh' },
+      { name: 'Neemuch', region: 'central', state: 'Madhya Pradesh' },
+      { name: 'Pithampur', region: 'central', state: 'Madhya Pradesh' },
+      { name: 'Hoshangabad', region: 'central', state: 'Madhya Pradesh' },
+      { name: 'Itarsi', region: 'central', state: 'Madhya Pradesh' },
+      { name: 'Sehore', region: 'central', state: 'Madhya Pradesh' },
+      { name: 'Balaghat', region: 'central', state: 'Madhya Pradesh' },
+      { name: 'Betul', region: 'central', state: 'Madhya Pradesh' },
+      { name: 'Seoni', region: 'central', state: 'Madhya Pradesh' },
+
+      // Maharashtra
+      { name: 'Mumbai', region: 'west', state: 'Maharashtra' },
+      { name: 'Pune', region: 'west', state: 'Maharashtra' },
+      { name: 'Nagpur', region: 'west', state: 'Maharashtra' },
+      { name: 'Thane', region: 'west', state: 'Maharashtra' },
+      { name: 'Nashik', region: 'west', state: 'Maharashtra' },
+      { name: 'Aurangabad', region: 'west', state: 'Maharashtra' },
+      { name: 'Solapur', region: 'west', state: 'Maharashtra' },
+      { name: 'Navi Mumbai', region: 'west', state: 'Maharashtra' },
+      { name: 'Pimpri-Chinchwad', region: 'west', state: 'Maharashtra' },
+      { name: 'Kalyan-Dombivli', region: 'west', state: 'Maharashtra' },
+      { name: 'Vasai-Virar', region: 'west', state: 'Maharashtra' },
+      { name: 'Ulhasnagar', region: 'west', state: 'Maharashtra' },
+      { name: 'Sangli', region: 'west', state: 'Maharashtra' },
+      { name: 'Malegaon', region: 'west', state: 'Maharashtra' },
+      { name: 'Jalgaon', region: 'west', state: 'Maharashtra' },
+      { name: 'Akola', region: 'west', state: 'Maharashtra' },
+      { name: 'Latur', region: 'west', state: 'Maharashtra' },
+      { name: 'Dhule', region: 'west', state: 'Maharashtra' },
+      { name: 'Ahmednagar', region: 'west', state: 'Maharashtra' },
+      { name: 'Kolhapur', region: 'west', state: 'Maharashtra' },
+      { name: 'Amravati', region: 'west', state: 'Maharashtra' },
+      { name: 'Nanded', region: 'west', state: 'Maharashtra' },
+      { name: 'Chandrapur', region: 'west', state: 'Maharashtra' },
+      { name: 'Parbhani', region: 'west', state: 'Maharashtra' },
+      { name: 'Ichalkaranji', region: 'west', state: 'Maharashtra' },
+      { name: 'Jalna', region: 'west', state: 'Maharashtra' },
+      { name: 'Ambarnath', region: 'west', state: 'Maharashtra' },
+      { name: 'Bhusawal', region: 'west', state: 'Maharashtra' },
+      { name: 'Panvel', region: 'west', state: 'Maharashtra' },
+      { name: 'Bardoli', region: 'west', state: 'Maharashtra' },
+      { name: 'Gondia', region: 'west', state: 'Maharashtra' },
+      { name: 'Satara', region: 'west', state: 'Maharashtra' },
+      { name: 'Wardha', region: 'west', state: 'Maharashtra' },
+      { name: 'Yavatmal', region: 'west', state: 'Maharashtra' },
+      { name: 'Osmanabad', region: 'west', state: 'Maharashtra' },
+      { name: 'Bid', region: 'west', state: 'Maharashtra' },
+      { name: 'Buldana', region: 'west', state: 'Maharashtra' },
+      { name: 'Hinganghat', region: 'west', state: 'Maharashtra' },
+      { name: 'Kamptee', region: 'west', state: 'Maharashtra' },
+      { name: 'Hingoli', region: 'west', state: 'Maharashtra' },
+
+      // Manipur
+      { name: 'Imphal', region: 'east', state: 'Manipur' },
+      { name: 'Thoubal', region: 'east', state: 'Manipur' },
+      { name: 'Bishnupur', region: 'east', state: 'Manipur' },
+      { name: 'Churachandpur', region: 'east', state: 'Manipur' },
+      { name: 'Ukhrul', region: 'east', state: 'Manipur' },
+      { name: 'Senapati', region: 'east', state: 'Manipur' },
+      { name: 'Kakching', region: 'east', state: 'Manipur' },
+      { name: 'Jiribam', region: 'east', state: 'Manipur' },
+
+      // Meghalaya
+      { name: 'Shillong', region: 'east', state: 'Meghalaya' },
+      { name: 'Tura', region: 'east', state: 'Meghalaya' },
+      { name: 'Nongstoin', region: 'east', state: 'Meghalaya' },
+      { name: 'Jowai', region: 'east', state: 'Meghalaya' },
+      { name: 'Baghmara', region: 'east', state: 'Meghalaya' },
+      { name: 'Williamnagar', region: 'east', state: 'Meghalaya' },
+
+      // Mizoram
+      { name: 'Aizawl', region: 'east', state: 'Mizoram' },
+      { name: 'Lunglei', region: 'east', state: 'Mizoram' },
+      { name: 'Champhai', region: 'east', state: 'Mizoram' },
+      { name: 'Serchhip', region: 'east', state: 'Mizoram' },
+      { name: 'Kolasib', region: 'east', state: 'Mizoram' },
+      { name: 'Saiha', region: 'east', state: 'Mizoram' },
+      { name: 'Lawngtlai', region: 'east', state: 'Mizoram' },
+
+      // Nagaland
+      { name: 'Kohima', region: 'east', state: 'Nagaland' },
+      { name: 'Dimapur', region: 'east', state: 'Nagaland' },
+      { name: 'Mokokchung', region: 'east', state: 'Nagaland' },
+      { name: 'Tuensang', region: 'east', state: 'Nagaland' },
+      { name: 'Wokha', region: 'east', state: 'Nagaland' },
+      { name: 'Zunheboto', region: 'east', state: 'Nagaland' },
+      { name: 'Phek', region: 'east', state: 'Nagaland' },
+      { name: 'Mon', region: 'east', state: 'Nagaland' },
+
+      // Odisha
+      { name: 'Bhubaneswar', region: 'east', state: 'Odisha' },
+      { name: 'Cuttack', region: 'east', state: 'Odisha' },
+      { name: 'Rourkela', region: 'east', state: 'Odisha' },
+      { name: 'Berhampur', region: 'east', state: 'Odisha' },
+      { name: 'Sambalpur', region: 'east', state: 'Odisha' },
+      { name: 'Puri', region: 'east', state: 'Odisha' },
+      { name: 'Balasore', region: 'east', state: 'Odisha' },
+      { name: 'Bhadrak', region: 'east', state: 'Odisha' },
+      { name: 'Baripada', region: 'east', state: 'Odisha' },
+      { name: 'Jharsuguda', region: 'east', state: 'Odisha' },
+      { name: 'Angul', region: 'east', state: 'Odisha' },
+      { name: 'Rayagada', region: 'east', state: 'Odisha' },
+      { name: 'Dhenkanal', region: 'east', state: 'Odisha' },
+      { name: 'Barbil', region: 'east', state: 'Odisha' },
+      { name: 'Bargarh', region: 'east', state: 'Odisha' },
+      { name: 'Paradip', region: 'east', state: 'Odisha' },
+      { name: 'Jeypore', region: 'east', state: 'Odisha' },
+      { name: 'Bhawanipatna', region: 'east', state: 'Odisha' },
+
+      // Punjab
+      { name: 'Ludhiana', region: 'north', state: 'Punjab' },
+      { name: 'Amritsar', region: 'north', state: 'Punjab' },
+      { name: 'Jalandhar', region: 'north', state: 'Punjab' },
+      { name: 'Patiala', region: 'north', state: 'Punjab' },
+      { name: 'Bathinda', region: 'north', state: 'Punjab' },
+      { name: 'Mohali', region: 'north', state: 'Punjab' },
+      { name: 'Pathankot', region: 'north', state: 'Punjab' },
+      { name: 'Hoshiarpur', region: 'north', state: 'Punjab' },
+      { name: 'Moga', region: 'north', state: 'Punjab' },
+      { name: 'Batala', region: 'north', state: 'Punjab' },
+      { name: 'Kapurthala', region: 'north', state: 'Punjab' },
+      { name: 'Firozpur', region: 'north', state: 'Punjab' },
+      { name: 'Khanna', region: 'north', state: 'Punjab' },
+      { name: 'Abohar', region: 'north', state: 'Punjab' },
+      { name: 'Malerkotla', region: 'north', state: 'Punjab' },
+      { name: 'Fazilka', region: 'north', state: 'Punjab' },
+      { name: 'Gurdaspur', region: 'north', state: 'Punjab' },
+      { name: 'Kharar', region: 'north', state: 'Punjab' },
+      { name: 'Barnala', region: 'north', state: 'Punjab' },
+      { name: 'Faridkot', region: 'north', state: 'Punjab' },
+      { name: 'Rajpura', region: 'north', state: 'Punjab' },
+      { name: 'Phagwara', region: 'north', state: 'Punjab' },
+      { name: 'Muktsar', region: 'north', state: 'Punjab' },
+      { name: 'Sangrur', region: 'north', state: 'Punjab' },
+
+      // Rajasthan
+      { name: 'Jaipur', region: 'north', state: 'Rajasthan' },
+      { name: 'Jodhpur', region: 'north', state: 'Rajasthan' },
+      { name: 'Kota', region: 'north', state: 'Rajasthan' },
+      { name: 'Bikaner', region: 'north', state: 'Rajasthan' },
+      { name: 'Udaipur', region: 'north', state: 'Rajasthan' },
+      { name: 'Ajmer', region: 'north', state: 'Rajasthan' },
+      { name: 'Bhilwara', region: 'north', state: 'Rajasthan' },
+      { name: 'Alwar', region: 'north', state: 'Rajasthan' },
+      { name: 'Bharatpur', region: 'north', state: 'Rajasthan' },
+      { name: 'Pali', region: 'north', state: 'Rajasthan' },
+      { name: 'Sikar', region: 'north', state: 'Rajasthan' },
+      { name: 'Tonk', region: 'north', state: 'Rajasthan' },
+      { name: 'Barmer', region: 'north', state: 'Rajasthan' },
+      { name: 'Jaisalmer', region: 'north', state: 'Rajasthan' },
+      { name: 'Sri Ganganagar', region: 'north', state: 'Rajasthan' },
+      { name: 'Hanumangarh', region: 'north', state: 'Rajasthan' },
+      { name: 'Churu', region: 'north', state: 'Rajasthan' },
+      { name: 'Jhunjhunu', region: 'north', state: 'Rajasthan' },
+      { name: 'Chittorgarh', region: 'north', state: 'Rajasthan' },
+      { name: 'Beawar', region: 'north', state: 'Rajasthan' },
+      { name: 'Kishangarh', region: 'north', state: 'Rajasthan' },
+      { name: 'Bhiwadi', region: 'north', state: 'Rajasthan' },
+      { name: 'Sawai Madhopur', region: 'north', state: 'Rajasthan' },
+      { name: 'Bundi', region: 'north', state: 'Rajasthan' },
+      { name: 'Banswara', region: 'north', state: 'Rajasthan' },
+      { name: 'Dungarpur', region: 'north', state: 'Rajasthan' },
+      { name: 'Mount Abu', region: 'north', state: 'Rajasthan' },
+      { name: 'Nagaur', region: 'north', state: 'Rajasthan' },
+
+      // Sikkim
+      { name: 'Gangtok', region: 'east', state: 'Sikkim' },
+      { name: 'Namchi', region: 'east', state: 'Sikkim' },
+      { name: 'Mangan', region: 'east', state: 'Sikkim' },
+      { name: 'Gyalshing', region: 'east', state: 'Sikkim' },
+
+      // Tamil Nadu
+      { name: 'Chennai', region: 'south', state: 'Tamil Nadu' },
+      { name: 'Coimbatore', region: 'south', state: 'Tamil Nadu' },
+      { name: 'Madurai', region: 'south', state: 'Tamil Nadu' },
+      { name: 'Tiruchirappalli', region: 'south', state: 'Tamil Nadu' },
+      { name: 'Salem', region: 'south', state: 'Tamil Nadu' },
+      { name: 'Tiruppur', region: 'south', state: 'Tamil Nadu' },
+      { name: 'Erode', region: 'south', state: 'Tamil Nadu' },
+      { name: 'Vellore', region: 'south', state: 'Tamil Nadu' },
+      { name: 'Thoothukudi', region: 'south', state: 'Tamil Nadu' },
+      { name: 'Thanjavur', region: 'south', state: 'Tamil Nadu' },
+      { name: 'Dindigul', region: 'south', state: 'Tamil Nadu' },
+      { name: 'Nagercoil', region: 'south', state: 'Tamil Nadu' },
+      { name: 'Kanchipuram', region: 'south', state: 'Tamil Nadu' },
+      { name: 'Tirunelveli', region: 'south', state: 'Tamil Nadu' },
+      { name: 'Cuddalore', region: 'south', state: 'Tamil Nadu' },
+      { name: 'Karur', region: 'south', state: 'Tamil Nadu' },
+      { name: 'Hosur', region: 'south', state: 'Tamil Nadu' },
+      { name: 'Kanyakumari', region: 'south', state: 'Tamil Nadu' },
+      { name: 'Ambur', region: 'south', state: 'Tamil Nadu' },
+      { name: 'Rajapalayam', region: 'south', state: 'Tamil Nadu' },
+      { name: 'Pudukkottai', region: 'south', state: 'Tamil Nadu' },
+      { name: 'Nagapattinam', region: 'south', state: 'Tamil Nadu' },
+      { name: 'Kumbakonam', region: 'south', state: 'Tamil Nadu' },
+      { name: 'Tiruvannamalai', region: 'south', state: 'Tamil Nadu' },
+      { name: 'Pollachi', region: 'south', state: 'Tamil Nadu' },
+      { name: 'Krishnagiri', region: 'south', state: 'Tamil Nadu' },
+      { name: 'Neyveli', region: 'south', state: 'Tamil Nadu' },
+      { name: 'Ramanathapuram', region: 'south', state: 'Tamil Nadu' },
+      { name: 'Sivakasi', region: 'south', state: 'Tamil Nadu' },
+      { name: 'Virudhunagar', region: 'south', state: 'Tamil Nadu' },
+      { name: 'Arakkonam', region: 'south', state: 'Tamil Nadu' },
+      { name: 'Srivilliputhur', region: 'south', state: 'Tamil Nadu' },
+      { name: 'Udumalaipettai', region: 'south', state: 'Tamil Nadu' },
+      { name: 'Gobichettipalayam', region: 'south', state: 'Tamil Nadu' },
+      { name: 'Tindivanam', region: 'south', state: 'Tamil Nadu' },
+      { name: 'Palani', region: 'south', state: 'Tamil Nadu' },
+      { name: 'Vaniyambadi', region: 'south', state: 'Tamil Nadu' },
+      { name: 'Theni', region: 'south', state: 'Tamil Nadu' },
+      { name: 'Aruppukkottai', region: 'south', state: 'Tamil Nadu' },
+      { name: 'Ranipet', region: 'south', state: 'Tamil Nadu' },
+      { name: 'Thiruvallur', region: 'south', state: 'Tamil Nadu' },
+      { name: 'Tenkasi', region: 'south', state: 'Tamil Nadu' },
+
+      // Telangana
+      { name: 'Hyderabad', region: 'south', state: 'Telangana' },
+      { name: 'Warangal', region: 'south', state: 'Telangana' },
+      { name: 'Nizamabad', region: 'south', state: 'Telangana' },
+      { name: 'Karimnagar', region: 'south', state: 'Telangana' },
+      { name: 'Khammam', region: 'south', state: 'Telangana' },
+      { name: 'Ramagundam', region: 'south', state: 'Telangana' },
+      { name: 'Mahbubnagar', region: 'south', state: 'Telangana' },
+      { name: 'Nalgonda', region: 'south', state: 'Telangana' },
+      { name: 'Adilabad', region: 'south', state: 'Telangana' },
+      { name: 'Suryapet', region: 'south', state: 'Telangana' },
+      { name: 'Siddipet', region: 'south', state: 'Telangana' },
+      { name: 'Miryalaguda', region: 'south', state: 'Telangana' },
+      { name: 'Jagtial', region: 'south', state: 'Telangana' },
+      { name: 'Mancherial', region: 'south', state: 'Telangana' },
+      { name: 'Nirmal', region: 'south', state: 'Telangana' },
+      { name: 'Kamareddy', region: 'south', state: 'Telangana' },
+      { name: 'Bodhan', region: 'south', state: 'Telangana' },
+      { name: 'Palwancha', region: 'south', state: 'Telangana' },
+      { name: 'Kothagudem', region: 'south', state: 'Telangana' },
+      { name: 'Sangareddy', region: 'south', state: 'Telangana' },
+
+      // Tripura
+      { name: 'Agartala', region: 'east', state: 'Tripura' },
+      { name: 'Udaipur', region: 'east', state: 'Tripura' },
+      { name: 'Dharmanagar', region: 'east', state: 'Tripura' },
+      { name: 'Kailasahar', region: 'east', state: 'Tripura' },
+
+      // Uttar Pradesh
+      { name: 'Lucknow', region: 'north', state: 'Uttar Pradesh' },
+      { name: 'Kanpur', region: 'north', state: 'Uttar Pradesh' },
+      { name: 'Ghaziabad', region: 'north', state: 'Uttar Pradesh' },
+      { name: 'Agra', region: 'north', state: 'Uttar Pradesh' },
+      { name: 'Varanasi', region: 'north', state: 'Uttar Pradesh' },
+      { name: 'Meerut', region: 'north', state: 'Uttar Pradesh' },
+      { name: 'Prayagraj', region: 'north', state: 'Uttar Pradesh' },
+      { name: 'Bareilly', region: 'north', state: 'Uttar Pradesh' },
+      { name: 'Aligarh', region: 'north', state: 'Uttar Pradesh' },
+      { name: 'Moradabad', region: 'north', state: 'Uttar Pradesh' },
+      { name: 'Saharanpur', region: 'north', state: 'Uttar Pradesh' },
+      { name: 'Gorakhpur', region: 'north', state: 'Uttar Pradesh' },
+      { name: 'Noida', region: 'north', state: 'Uttar Pradesh' },
+      { name: 'Firozabad', region: 'north', state: 'Uttar Pradesh' },
+      { name: 'Jhansi', region: 'north', state: 'Uttar Pradesh' },
+      { name: 'Muzaffarnagar', region: 'north', state: 'Uttar Pradesh' },
+      { name: 'Mathura', region: 'north', state: 'Uttar Pradesh' },
+      { name: 'Rampur', region: 'north', state: 'Uttar Pradesh' },
+      { name: 'Shahjahanpur', region: 'north', state: 'Uttar Pradesh' },
+      { name: 'Farrukhabad', region: 'north', state: 'Uttar Pradesh' },
+      { name: 'Maunath Bhanjan', region: 'north', state: 'Uttar Pradesh' },
+      { name: 'Hapur', region: 'north', state: 'Uttar Pradesh' },
+      { name: 'Ayodhya', region: 'north', state: 'Uttar Pradesh' },
+      { name: 'Etawah', region: 'north', state: 'Uttar Pradesh' },
+      { name: 'Mirzapur', region: 'north', state: 'Uttar Pradesh' },
+      { name: 'Bulandshahr', region: 'north', state: 'Uttar Pradesh' },
+      { name: 'Sambhal', region: 'north', state: 'Uttar Pradesh' },
+      { name: 'Amroha', region: 'north', state: 'Uttar Pradesh' },
+      { name: 'Hardoi', region: 'north', state: 'Uttar Pradesh' },
+      { name: 'Fatehpur', region: 'north', state: 'Uttar Pradesh' },
+      { name: 'Raebareli', region: 'north', state: 'Uttar Pradesh' },
+      { name: 'Orai', region: 'north', state: 'Uttar Pradesh' },
+      { name: 'Bahraich', region: 'north', state: 'Uttar Pradesh' },
+      { name: 'Unnao', region: 'north', state: 'Uttar Pradesh' },
+      { name: 'Rae Bareli', region: 'north', state: 'Uttar Pradesh' },
+      { name: 'Lakhimpur', region: 'north', state: 'Uttar Pradesh' },
+      { name: 'Sitapur', region: 'north', state: 'Uttar Pradesh' },
+      { name: 'Lalitpur', region: 'north', state: 'Uttar Pradesh' },
+      { name: 'Pilibhit', region: 'north', state: 'Uttar Pradesh' },
+      { name: 'Chandausi', region: 'north', state: 'Uttar Pradesh' },
+      { name: 'Hardwar', region: 'north', state: 'Uttar Pradesh' },
+      { name: 'Azamgarh', region: 'north', state: 'Uttar Pradesh' },
+      { name: 'Khurja', region: 'north', state: 'Uttar Pradesh' },
+      { name: 'Sultanpur', region: 'north', state: 'Uttar Pradesh' },
+      { name: 'Tanda', region: 'north', state: 'Uttar Pradesh' },
+      { name: 'Nagina', region: 'north', state: 'Uttar Pradesh' },
+      { name: 'Shamli', region: 'north', state: 'Uttar Pradesh' },
+      { name: 'Najibabad', region: 'north', state: 'Uttar Pradesh' },
+      { name: 'Shikohabad', region: 'north', state: 'Uttar Pradesh' },
+      { name: 'Sikandrabad', region: 'north', state: 'Uttar Pradesh' },
+      { name: 'Shahabad', region: 'north', state: 'Uttar Pradesh' },
+      { name: 'Banda', region: 'north', state: 'Uttar Pradesh' },
+      { name: 'Ballia', region: 'north', state: 'Uttar Pradesh' },
+      { name: 'Jaunpur', region: 'north', state: 'Uttar Pradesh' },
+      { name: 'Bijnor', region: 'north', state: 'Uttar Pradesh' },
+      { name: 'Mainpuri', region: 'north', state: 'Uttar Pradesh' },
+      { name: 'Gonda', region: 'north', state: 'Uttar Pradesh' },
+      { name: 'Basti', region: 'north', state: 'Uttar Pradesh' },
+      { name: 'Deoria', region: 'north', state: 'Uttar Pradesh' },
+      { name: 'Mau', region: 'north', state: 'Uttar Pradesh' },
+      { name: 'Hathras', region: 'north', state: 'Uttar Pradesh' },
+      { name: 'Kheri', region: 'north', state: 'Uttar Pradesh' },
+      { name: 'Hamirpur', region: 'north', state: 'Uttar Pradesh' },
+      { name: 'Chitrakoot', region: 'north', state: 'Uttar Pradesh' },
+      { name: 'Kasganj', region: 'north', state: 'Uttar Pradesh' },
+      { name: 'Greater Noida', region: 'north', state: 'Uttar Pradesh' },
+      { name: 'Ghazipur', region: 'north', state: 'Uttar Pradesh' },
+
+      // Uttarakhand
+      { name: 'Dehradun', region: 'north', state: 'Uttarakhand' },
+      { name: 'Haridwar', region: 'north', state: 'Uttarakhand' },
+      { name: 'Roorkee', region: 'north', state: 'Uttarakhand' },
+      { name: 'Haldwani', region: 'north', state: 'Uttarakhand' },
+      { name: 'Rudrapur', region: 'north', state: 'Uttarakhand' },
+      { name: 'Kashipur', region: 'north', state: 'Uttarakhand' },
+      { name: 'Rishikesh', region: 'north', state: 'Uttarakhand' },
+      { name: 'Pithoragarh', region: 'north', state: 'Uttarakhand' },
+      { name: 'Nainital', region: 'north', state: 'Uttarakhand' },
+      { name: 'Almora', region: 'north', state: 'Uttarakhand' },
+      { name: 'Kotdwar', region: 'north', state: 'Uttarakhand' },
+      { name: 'Ramnagar', region: 'north', state: 'Uttarakhand' },
+      { name: 'Mussoorie', region: 'north', state: 'Uttarakhand' },
+      { name: 'Tanakpur', region: 'north', state: 'Uttarakhand' },
+      { name: 'Kichha', region: 'north', state: 'Uttarakhand' },
+      { name: 'Sitarganj', region: 'north', state: 'Uttarakhand' },
+
+      // West Bengal
+      { name: 'Kolkata', region: 'east', state: 'West Bengal' },
+      { name: 'Asansol', region: 'east', state: 'West Bengal' },
+      { name: 'Siliguri', region: 'east', state: 'West Bengal' },
+      { name: 'Durgapur', region: 'east', state: 'West Bengal' },
+      { name: 'Bardhaman', region: 'east', state: 'West Bengal' },
+      { name: 'Malda', region: 'east', state: 'West Bengal' },
+      { name: 'Baharampur', region: 'east', state: 'West Bengal' },
+      { name: 'Habra', region: 'east', state: 'West Bengal' },
+      { name: 'Kharagpur', region: 'east', state: 'West Bengal' },
+      { name: 'Shantipur', region: 'east', state: 'West Bengal' },
+      { name: 'Dankuni', region: 'east', state: 'West Bengal' },
+      { name: 'Haldia', region: 'east', state: 'West Bengal' },
+      { name: 'Raiganj', region: 'east', state: 'West Bengal' },
+      { name: 'Krishnanagar', region: 'east', state: 'West Bengal' },
+      { name: 'Nabadwip', region: 'east', state: 'West Bengal' },
+      { name: 'Medinipur', region: 'east', state: 'West Bengal' },
+      { name: 'Jalpaiguri', region: 'east', state: 'West Bengal' },
+      { name: 'Balurghat', region: 'east', state: 'West Bengal' },
+      { name: 'Basirhat', region: 'east', state: 'West Bengal' },
+      { name: 'Cooch Behar', region: 'east', state: 'West Bengal' },
+      { name: 'Alipurduar', region: 'east', state: 'West Bengal' },
+      { name: 'Purulia', region: 'east', state: 'West Bengal' },
+      { name: 'Bankura', region: 'east', state: 'West Bengal' },
+      { name: 'Raniganj', region: 'east', state: 'West Bengal' },
+      { name: 'Kulti', region: 'east', state: 'West Bengal' },
+      { name: 'Howrah', region: 'east', state: 'West Bengal' },
+      { name: 'Barrackpur', region: 'east', state: 'West Bengal' },
+      { name: 'Chandannagar', region: 'east', state: 'West Bengal' },
+      { name: 'Arambagh', region: 'east', state: 'West Bengal' },
+      { name: 'Midnapore', region: 'east', state: 'West Bengal' },
+      { name: 'Tamluk', region: 'east', state: 'West Bengal' },
+      { name: 'Contai', region: 'east', state: 'West Bengal' },
+      { name: 'Jangipur', region: 'east', state: 'West Bengal' },
+      { name: 'Berhampore', region: 'east', state: 'West Bengal' },
+      { name: 'Murshidabad', region: 'east', state: 'West Bengal' },
+      { name: 'Titagarh', region: 'east', state: 'West Bengal' },
+      { name: 'Bhatpara', region: 'east', state: 'West Bengal' },
+      { name: 'Kamarhati', region: 'east', state: 'West Bengal' },
+      { name: 'Madhyamgram', region: 'east', state: 'West Bengal' },
+      { name: 'Uttarpara', region: 'east', state: 'West Bengal' },
+      { name: 'Serampore', region: 'east', state: 'West Bengal' },
+      { name: 'Rishra', region: 'east', state: 'West Bengal' },
+      { name: 'Kanchrapara', region: 'east', state: 'West Bengal' },
+      { name: 'Naihati', region: 'east', state: 'West Bengal' },
+      { name: 'Panihati', region: 'east', state: 'West Bengal' },
+      { name: 'Dum Dum', region: 'east', state: 'West Bengal' },
+      { name: 'English Bazar', region: 'east', state: 'West Bengal' },
+      { name: 'Darjeeling', region: 'east', state: 'West Bengal' },
+
+      // Union Territories
+      // Andaman and Nicobar Islands
+      { name: 'Port Blair', region: 'east', state: 'Andaman and Nicobar' },
+
+      // Chandigarh
+      { name: 'Chandigarh', region: 'north', state: 'Chandigarh' },
+
+      // Dadra and Nagar Haveli and Daman and Diu
+      { name: 'Daman', region: 'west', state: 'Daman and Diu' },
+      { name: 'Diu', region: 'west', state: 'Daman and Diu' },
+      { name: 'Silvassa', region: 'west', state: 'Dadra and Nagar Haveli' },
+
+      // Delhi (NCR)
+      { name: 'Delhi', region: 'north', state: 'Delhi' },
+      { name: 'New Delhi', region: 'north', state: 'Delhi' },
+      { name: 'Dwarka', region: 'north', state: 'Delhi' },
+      { name: 'Rohini', region: 'north', state: 'Delhi' },
+      { name: 'Najafgarh', region: 'north', state: 'Delhi' },
+      { name: 'Janakpuri', region: 'north', state: 'Delhi' },
+      { name: 'Pitampura', region: 'north', state: 'Delhi' },
+      { name: 'Mayur Vihar', region: 'north', state: 'Delhi' },
+      { name: 'Vasant Kunj', region: 'north', state: 'Delhi' },
+      { name: 'Karol Bagh', region: 'north', state: 'Delhi' },
+      { name: 'Saket', region: 'north', state: 'Delhi' },
+      { name: 'Laxmi Nagar', region: 'north', state: 'Delhi' },
+      { name: 'Shahdara', region: 'north', state: 'Delhi' },
+      { name: 'Patel Nagar', region: 'north', state: 'Delhi' },
+      { name: 'Connaught Place', region: 'north', state: 'Delhi' },
+
+      // Jammu and Kashmir
+      { name: 'Srinagar', region: 'north', state: 'Jammu and Kashmir' },
+      { name: 'Jammu', region: 'north', state: 'Jammu and Kashmir' },
+      { name: 'Anantnag', region: 'north', state: 'Jammu and Kashmir' },
+      { name: 'Baramulla', region: 'north', state: 'Jammu and Kashmir' },
+      { name: 'Sopore', region: 'north', state: 'Jammu and Kashmir' },
+      { name: 'Kathua', region: 'north', state: 'Jammu and Kashmir' },
+      { name: 'Udhampur', region: 'north', state: 'Jammu and Kashmir' },
+      { name: 'Pulwama', region: 'north', state: 'Jammu and Kashmir' },
+      { name: 'Kupwara', region: 'north', state: 'Jammu and Kashmir' },
+      { name: 'Rajouri', region: 'north', state: 'Jammu and Kashmir' },
+      { name: 'Poonch', region: 'north', state: 'Jammu and Kashmir' },
+      { name: 'Doda', region: 'north', state: 'Jammu and Kashmir' },
+      { name: 'Samba', region: 'north', state: 'Jammu and Kashmir' },
+      { name: 'Reasi', region: 'north', state: 'Jammu and Kashmir' },
+
+      // Ladakh
+      { name: 'Leh', region: 'north', state: 'Ladakh' },
+      { name: 'Kargil', region: 'north', state: 'Ladakh' },
+
+      // Lakshadweep
+      { name: 'Kavaratti', region: 'south', state: 'Lakshadweep' },
+
+      // Puducherry
+      { name: 'Puducherry', region: 'south', state: 'Puducherry' },
+      { name: 'Karaikal', region: 'south', state: 'Puducherry' },
+      { name: 'Mahe', region: 'south', state: 'Puducherry' },
+      { name: 'Yanam', region: 'south', state: 'Puducherry' }
+    ];
+    
+    let allCityData = {};
+    let unavailableCities = [];
+    let currentFilter = 'all';
+    let charts = {};
+
+    document.addEventListener('DOMContentLoaded', () => {
+      console.log('🚀 App Starting...');
+      console.log(`📍 Loading ${INDIAN_CITIES.length} cities...`);
+      loadCities();
+    });
+
+    async function loadCities() {
+      showLoading();
+      unavailableCities = [];
+      
+      try {
+        const promises = INDIAN_CITIES.map(city => fetchCityData(city));
+        const results = await Promise.allSettled(promises);
+        
+        allCityData = {};
+        results.forEach((result, index) => {
+          if (result.status === 'fulfilled' && result.value) {
+            allCityData[result.value.city] = result.value;
+          } else {
+            unavailableCities.push(INDIAN_CITIES[index]);
+          }
+        });
+
+        const availableCount = Object.keys(allCityData).length;
+        const unavailableCount = unavailableCities.length;
+        
+        console.log(`✅ Loaded ${availableCount} cities`);
+        console.log(`❌ Unavailable: ${unavailableCount} cities`);
+        
+        hideLoading();
+        document.getElementById('loaded-cities').textContent = availableCount;
+        renderCityCards(Object.values(allCityData));
+        renderUnavailableCities();
+        populateComparisonSelects();
+        showToast(`✅ ${availableCount} cities loaded • ${unavailableCount} unavailable`, 3000);
+        
+      } catch (error) {
+        console.error('❌ Error:', error);
+        hideLoading();
+        showError(error.message);
+      }
+    }
+
+    async function fetchCityData(cityInfo) {
+      try {
+        const url = `${API_BASE}/feed/${encodeURIComponent(cityInfo.name)}/?token=${API_KEY}`;
+        const response = await fetch(url);
+        
+        if (!response.ok) {
+          console.warn(`❌ Failed to fetch: ${cityInfo.name}`);
+          return null;
+        }
+        
+        const data = await response.json();
+        
+        if (data.status !== 'ok' || !data.data || data.data.aqi === '-') {
+          console.warn(`❌ No data for: ${cityInfo.name}`);
+          return null;
+        }
+
+        console.log(`✅ ${cityInfo.name}: AQI ${data.data.aqi}`);
+        
+        return {
+          city: data.data.city.name || cityInfo.name,
+          state: cityInfo.state,
+          region: cityInfo.region,
+          aqi: parseInt(data.data.aqi) || 0,
+          time: data.data.time?.s || new Date().toISOString(),
+          dominentpol: data.data.dominentpol || 'N/A',
+          iaqi: data.data.iaqi || {}
+        };
+      } catch (error) {
+        console.warn(`❌ Error fetching ${cityInfo.name}:`, error.message);
+        return null;
+      }
+    }
+
+    function renderUnavailableCities() {
+      if (unavailableCities.length === 0) return;
+      
+      const grid = document.getElementById('city-grid');
+      
+      // Add section header for unavailable cities
+      const header = document.createElement('div');
+      header.className = 'col-span-full mt-8 mb-4';
+      header.innerHTML = `
+        <h3 class="text-2xl font-bold text-gray-400">
+          ⚠️ Cities with Unavailable Data (${unavailableCities.length})
+        </h3>
+        <p class="text-sm text-gray-500 mt-2">Data not available from monitoring stations</p>
+      `;
+      grid.appendChild(header);
+      
+      // Render unavailable city cards
+      unavailableCities.forEach(cityInfo => {
+        const card = document.createElement('div');
+        card.className = 'themed-card city-card p-6 rounded-xl no-data-card';
+        card.innerHTML = `
+          <div class="mb-4">
+            <h3 class="text-lg font-bold text-gray-400">${cityInfo.name}</h3>
+            <p class="text-xs text-gray-500">${cityInfo.state}</p>
+          </div>
+          <div class="text-center mb-4">
+            <div class="text-4xl mb-2">🚫</div>
+            <p class="text-sm text-gray-500">Data Unavailable</p>
+          </div>
+          <div class="text-xs text-gray-500">
+            <div class="flex justify-between">
+              <span>Region:</span>
+              <span class="text-gray-400">${cityInfo.region.toUpperCase()}</span>
+            </div>
+          </div>
+        `;
+        grid.appendChild(card);
+      });
+    }
+
+    function showLoading() {
+      document.getElementById('loading').style.display = 'block';
+      document.getElementById('city-grid').innerHTML = '';
+    }
+
+    function hideLoading() {
+      document.getElementById('loading').style.display = 'none';
+    }
+
+    function showError(message) {
+      document.getElementById('error').style.display = 'block';
+      document.getElementById('error-message').textContent = message;
+    }
+
+    function getAQIStatus(aqi) {
+      if (aqi <= 50) return { label: 'Good', color: '#10b981' };
+      if (aqi <= 100) return { label: 'Moderate', color: '#f59e0b' };
+      if (aqi <= 150) return { label: 'Unhealthy (Sensitive)', color: '#f97316' };
+      if (aqi <= 200) return { label: 'Unhealthy', color: '#ef4444' };
+      if (aqi <= 300) return { label: 'Very Unhealthy', color: '#dc2626' };
+      return { label: 'Hazardous', color: '#991b1b' };
+    }
+
+    function getAQICategory(aqi) {
+      if (aqi <= 50) return 'Good';
+      if (aqi <= 100) return 'Moderate';
+      if (aqi <= 150) return 'Unhealthy (SG)';
+      if (aqi <= 200) return 'Unhealthy';
+      if (aqi <= 300) return 'Very Unhealthy';
+      return 'Hazardous';
+    }
+
+    function getAQIColor(aqi) {
+      if (aqi <= 50) return '#10b981';
+      if (aqi <= 100) return '#f59e0b';
+      if (aqi <= 150) return '#f97316';
+      if (aqi <= 200) return '#ef4444';
+      if (aqi <= 300) return '#dc2626';
+      return '#991b1b';
+    }
+
+    function showCityDetails(city) {
+      const status = getAQIStatus(city.aqi);
+      document.getElementById('modal-city-name').textContent = `${city.city}, ${city.state}`;
+      
+      // Get pollutant details
+      const pollutants = [];
+      if (city.iaqi.pm25) pollutants.push({ label: 'PM2.5', value: city.iaqi.pm25.v, unit: 'μg/m³' });
+      if (city.iaqi.pm10) pollutants.push({ label: 'PM10', value: city.iaqi.pm10.v, unit: 'μg/m³' });
+      if (city.iaqi.o3) pollutants.push({ label: 'O₃', value: city.iaqi.o3.v, unit: 'ppb' });
+      if (city.iaqi.no2) pollutants.push({ label: 'NO₂', value: city.iaqi.no2.v, unit: 'ppb' });
+      if (city.iaqi.so2) pollutants.push({ label: 'SO₂', value: city.iaqi.so2.v, unit: 'ppb' });
+      if (city.iaqi.co) pollutants.push({ label: 'CO', value: city.iaqi.co.v, unit: 'ppm' });
+      
+      document.getElementById('modal-content').innerHTML = `
+        <div class="detail-grid">
+          <div class="detail-item">
+            <div class="detail-label">Current AQI</div>
+            <div class="detail-value" style="color: ${status.color}">${city.aqi}</div>
+          </div>
+          <div class="detail-item">
+            <div class="detail-label">Air Quality</div>
+            <div class="detail-value text-base" style="color: ${status.color}">${status.label}</div>
+          </div>
+          <div class="detail-item">
+            <div class="detail-label">Primary Pollutant</div>
+            <div class="detail-value text-lg">${city.dominentpol.toUpperCase()}</div>
+          </div>
+          <div class="detail-item">
+            <div class="detail-label">Region</div>
+            <div class="detail-value text-lg">${city.region.toUpperCase()}</div>
+          </div>
+        </div>
+        
+        ${pollutants.length > 0 ? `
+          <div class="mt-6">
+            <h3 class="text-xl font-bold mb-4">📊 Pollutant Details</h3>
+            <div class="detail-grid">
+              ${pollutants.map(p => `
+                <div class="detail-item">
+                  <div class="detail-label">${p.label}</div>
+                  <div class="detail-value">${p.value.toFixed(1)} <span class="text-sm text-gray-400">${p.unit}</span></div>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        ` : ''}
+        
+        <div class="mt-6">
+          <h3 class="text-xl font-bold mb-4">ℹ️ Health Recommendations</h3>
+          <div class="p-4 rounded-lg" style="background: ${status.color}20; border: 1px solid ${status.color}40">
+            <p class="text-sm mb-3">Based on current AQI level (${status.label}):</p>
+            <ul class="list-disc list-inside text-sm space-y-2">
+              ${getHealthRecommendations(city.aqi).map(rec => `<li>${rec}</li>`).join('')}
+            </ul>
+          </div>
+        </div>
+        
+        <div class="mt-6 text-xs text-gray-400">
+          <p>Last updated: ${new Date(city.time).toLocaleString()}</p>
+        </div>
+      `;
+      
+      document.getElementById('city-detail-modal').classList.add('active');
+    }
+
+    function getHealthRecommendations(aqi) {
+      if (aqi <= 50) {
+        return [
+          'Air quality is satisfactory',
+          'Outdoor activities are safe for everyone',
+          'No special precautions needed'
+        ];
+      } else if (aqi <= 100) {
+        return [
+          'Air quality is acceptable for most people',
+          'Unusually sensitive people should consider limiting prolonged outdoor exertion',
+          'General public can engage in outdoor activities normally'
+        ];
+      } else if (aqi <= 150) {
+        return [
+          'Sensitive groups (children, elderly, respiratory patients) should limit prolonged outdoor exertion',
+          'General public should reduce prolonged or heavy exertion',
+          'Consider wearing a mask if going outside for extended periods'
+        ];
+      } else if (aqi <= 200) {
+        return [
+          'Everyone should limit prolonged outdoor exertion',
+          'Sensitive groups should avoid prolonged outdoor exertion',
+          'Wear N95 masks when going outside',
+          'Keep windows and doors closed',
+          'Use air purifiers indoors'
+        ];
+      } else if (aqi <= 300) {
+        return [
+          'Everyone should avoid prolonged outdoor exertion',
+          'Sensitive groups should remain indoors',
+          'Wear N95 or N99 masks if you must go outside',
+          'Keep all windows closed and use air purifiers',
+          'Avoid strenuous activities'
+        ];
+      } else {
+        return [
+          'Health alert: Everyone may experience serious health effects',
+          'Everyone should avoid all outdoor exertion',
+          'Stay indoors with air purifiers running',
+          'Emergency measures should be taken',
+          'Seek medical attention if experiencing health issues'
+        ];
+      }
+    }
+
+    function closeModal() {
+      document.getElementById('city-detail-modal').classList.remove('active');
+    }
+
+    function filterByRegion(region) {
+      currentFilter = region;
+      document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+      const filterBtn = document.querySelector(`[data-filter="${region}"]`);
+      if (filterBtn) filterBtn.classList.add('active');
+      renderCityCards(Object.values(allCityData));
+      
+      const filtered = currentFilter === 'all' 
+        ? Object.values(allCityData) 
+        : Object.values(allCityData).filter(c => c.region === currentFilter);
+      
+      showToast(`Showing ${filtered.length} cities in ${region.toUpperCase()}`, 2000);
+    }
+
+    function filterCities(search) {
+      if (!search) {
+        renderCityCards(Object.values(allCityData));
+        return;
+      }
+      const filtered = Object.values(allCityData).filter(c =>
+        c.city.toLowerCase().includes(search.toLowerCase()) ||
+        c.state.toLowerCase().includes(search.toLowerCase())
+      );
+      
+      const grid = document.getElementById('city-grid');
+      grid.innerHTML = '';
+      
+      if (filtered.length === 0) {
+        grid.innerHTML = '<div class="col-span-full text-center py-16 text-gray-400">No cities found matching your search</div>';
+        return;
+      }
+      
+      filtered.sort((a, b) => a.aqi - b.aqi);
+      filtered.forEach(city => {
+        const status = getAQIStatus(city.aqi);
+        const card = document.createElement('div');
+        card.className = 'themed-card city-card p-6 rounded-xl';
+        card.onclick = () => showCityDetails(city);
+        card.innerHTML = `
+          <div class="flex justify-between items-start mb-4">
+            <div>
+              <h3 class="text-lg font-bold">${city.city}</h3>
+              <p class="text-xs text-gray-400">${city.state}</p>
+            </div>
+          </div>
+          <div class="text-center mb-4">
+            <div class="text-4xl font-black mb-2" style="color: ${status.color}">${city.aqi}</div>
+            <p class="text-sm" style="color: ${status.color}">${status.label}</p>
+          </div>
+        `;
+        grid.appendChild(card);
+      });
+      
+      showToast(`Found ${filtered.length} cities`, 1500);
+    }
+
+    function changeTheme(theme) {
+      document.body.setAttribute('data-theme', theme);
+      document.querySelectorAll('.theme-btn').forEach(b => b.classList.remove('active'));
+      const themeBtn = document.querySelector(`.theme-btn[data-theme="${theme}"]`);
+      if (themeBtn) themeBtn.classList.add('active');
+      showToast(`Theme: ${theme}`, 1500);
+    }
+
+    function getCurrentLocation() {
+      if (!navigator.geolocation) {
+        showToast('❌ Geolocation not supported', 3000);
+        return;
+      }
+      
+      const btn = document.getElementById('location-btn');
+      btn.disabled = true;
+      btn.textContent = '🔄 Getting Location...';
+      
+      navigator.geolocation.getCurrentPosition(
+        async (position) => {
+          const { latitude, longitude } = position.coords;
+          try {
+            const url = `${API_BASE}/feed/geo:${latitude};${longitude}/?token=${API_KEY}`;
+            const response = await fetch(url);
+            const data = await response.json();
+            
+            if (data.status === 'ok' && data.data) {
+              const aqi = parseInt(data.data.aqi) || 0;
+              const cityName = data.data.city?.name || 'Your Location';
+              showToast(`📍 ${cityName}: AQI ${aqi} (${getAQIStatus(aqi).label})`, 4000);
+            }
+          } catch (error) {
+            showToast('❌ Failed to get AQI data', 3000);
+          }
+          btn.disabled = false;
+          btn.textContent = '📍 My Location';
+        },
+        (error) => {
+          showToast('❌ Location access denied', 3000);
+          btn.disabled = false;
+          btn.textContent = '📍 My Location';
+        }
+      );
+    }
+
+    function showView(view) {
+      document.querySelectorAll('.view-section').forEach(s => s.classList.remove('active'));
+      const viewEl = document.getElementById(`view-${view}`);
+      if (viewEl) viewEl.classList.add('active');
+      
+      // Update nav buttons
+      document.querySelectorAll('nav button').forEach(btn => {
+        btn.classList.remove('btn-primary');
+        btn.classList.add('bg-slate-700/80', 'hover:bg-slate-600');
+      });
+      
+      if (event && event.target) {
+        event.target.classList.remove('bg-slate-700/80', 'hover:bg-slate-600');
+        event.target.classList.add('btn-primary');
+      }
+      
+      if (view === 'analytics') {
+        setTimeout(() => createAnalyticsChart(), 100);
+      }
+      
+      if (view === 'map') {
+        setTimeout(() => {
+          initializeMap();
+          updateMapMarkers();
+        }, 100);
+      }
+      
+      if (view === 'news') {
+        renderNews();
+      }
+    }
+
+    function createAnalyticsChart() {
+      const canvas = document.getElementById('analytics-chart');
+      if (!canvas) return;
+      
+      const ctx = canvas.getContext('2d');
+      
+      if (charts.analytics) {
+        charts.analytics.destroy();
+      }
+      
+      const cities = Object.values(allCityData).slice(0, 20);
+      const labels = cities.map(c => c.city);
+      const data = cities.map(c => c.aqi);
+      const colors = data.map(aqi => getAQIStatus(aqi).color);
+      
+      charts.analytics = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: labels,
+          datasets: [{
+            label: 'AQI',
+            data: data,
+            backgroundColor: colors,
+            borderColor: colors,
+            borderWidth: 1
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false },
+            title: {
+              display: true,
+              text: 'Top 20 Cities by AQI',
+              color: '#f7fafc',
+              font: { size: 16 }
+            }
+          },
+          scales: {
+            y: {
+              beginAtZero: true,
+              grid: { color: 'rgba(99, 102, 241, 0.1)' },
+              ticks: { color: '#9ca3af' }
+            },
+            x: {
+              grid: { color: 'rgba(99, 102, 241, 0.1)' },
+              ticks: { 
+                color: '#9ca3af',
+                maxRotation: 45,
+                minRotation: 45
+              }
+            }
+          }
+        }
+      });
+    }
+
+    function populateComparisonSelects() {
+      const cities = Object.keys(allCityData).sort();
+      ['compare-city-1', 'compare-city-2'].forEach(id => {
+        const sel = document.getElementById(id);
+        if (!sel) return;
+        sel.innerHTML = '<option value="">Select a city...</option>';
+        cities.forEach(city => {
+          const opt = document.createElement('option');
+          opt.value = city;
+          opt.textContent = `${city} (${allCityData[city].state})`;
+          sel.appendChild(opt);
+        });
+      });
+    }
+
+    function updateComparison() {
+      const c1 = document.getElementById('compare-city-1')?.value;
+      const c2 = document.getElementById('compare-city-2')?.value;
+      
+      if (!c1 || !c2) {
+        document.getElementById('comparison-stats').innerHTML = '<p class="text-gray-400">Select 2 cities to compare</p>';
+        document.getElementById('comparison-results').innerHTML = '';
+        return;
+      }
+      
+      const city1 = allCityData[c1];
+      const city2 = allCityData[c2];
+      
+      const diff = Math.abs(city1.aqi - city2.aqi);
+      const better = city1.aqi < city2.aqi ? city1.city : city2.city;
+      
+      document.getElementById('comparison-stats').innerHTML = `
+        <div class="space-y-3 text-sm">
+          <div class="flex justify-between">
+            <span class="text-gray-400">AQI Difference:</span>
+            <span class="font-bold text-white">${diff}</span>
+          </div>
+          <div class="flex justify-between">
+            <span class="text-gray-400">Better Air Quality:</span>
+            <span class="font-bold text-green-400">${better}</span>
+          </div>
+          <div class="flex justify-between">
+            <span class="text-gray-400">Avg AQI:</span>
+            <span class="font-bold text-white">${Math.round((city1.aqi + city2.aqi) / 2)}</span>
+          </div>
+        </div>
+      `;
+      
+      const results = document.getElementById('comparison-results');
+      results.innerHTML = [city1, city2].map(c => {
+        const s = getAQIStatus(c.aqi);
+        return `
+          <div class="themed-card p-6 rounded-xl">
+            <h3 class="text-xl font-bold mb-2">${c.city}</h3>
+            <p class="text-sm text-gray-400 mb-4">${c.state}</p>
+            <div class="text-center mb-4">
+              <div class="text-4xl font-black mb-2" style="color: ${s.color}">${c.aqi}</div>
+              <p class="text-sm font-semibold" style="color: ${s.color}">${s.label}</p>
+            </div>
+            <div class="grid grid-cols-2 gap-2 text-xs">
+              <div class="bg-slate-800/50 p-2 rounded text-center">
+                <div class="text-gray-400">PM2.5</div>
+                <div class="font-bold">${c.iaqi.pm25?.v?.toFixed(1) || 'N/A'}</div>
+              </div>
+              <div class="bg-slate-800/50 p-2 rounded text-center">
+                <div class="text-gray-400">PM10</div>
+                <div class="font-bold">${c.iaqi.pm10?.v?.toFixed(1) || 'N/A'}</div>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function refreshData() {
+      showToast('🔄 Refreshing data...', 2000);
+      loadCities();
+    }
+
+    function showToast(msg, duration = 3000) {
+      const toast = document.createElement('div');
+      toast.className = 'toast-item';
+      toast.textContent = msg;
+      document.body.appendChild(toast);
+      setTimeout(() => toast.remove(), duration);
+    }
+
+    // ===== MAP FUNCTIONALITY =====
+    let map;
+    let markers = [];
+
+    function initializeMap() {
+      if (!map) {
+        map = L.map('map').setView([20.5937, 78.9629], 5); // Center of India
+        
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          attribution: '© OpenStreetMap contributors',
+          maxZoom: 18
+        }).addTo(map);
+      }
+    }
+
+    function updateMapMarkers() {
+      // Clear existing markers
+      markers.forEach(marker => marker.remove());
+      markers = [];
+
+      // City coordinates (approximate)
+      const cityCoords = {
+        'Delhi': [28.6139, 77.2090],
+        'Mumbai': [19.0760, 72.8777],
+        'Bangalore': [12.9716, 77.5946],
+        'Kolkata': [22.5726, 88.3639],
+        'Chennai': [13.0827, 80.2707],
+        'Hyderabad': [17.3850, 78.4867],
+        'Pune': [18.5204, 73.8567],
+        'Ahmedabad': [23.0225, 72.5714],
+        'Jaipur': [26.9124, 75.7873],
+        'Lucknow': [26.8467, 80.9462],
+        'Kanpur': [26.4499, 80.3319],
+        'Nagpur': [21.1458, 79.0882],
+        'Indore': [22.7196, 75.8577],
+        'Bhopal': [23.2599, 77.4126],
+        'Patna': [25.5941, 85.1376],
+        'Guwahati': [26.1445, 91.7362],
+        'Chandigarh': [30.7333, 76.7794],
+        'Srinagar': [34.0837, 74.7973],
+        'Thiruvananthapuram': [8.5241, 76.9366],
+        'Visakhapatnam': [17.6869, 83.2185]
+      };
+
+      Object.keys(allCityData).forEach(cityName => {
+        const city = allCityData[cityName];
+        const coords = cityCoords[cityName];
+        
+        if (coords) {
+          const color = getAQIColor(city.aqi);
+          const marker = L.circleMarker(coords, {
+            radius: 10,
+            fillColor: color,
+            color: '#fff',
+            weight: 2,
+            opacity: 1,
+            fillOpacity: 0.8
+          }).addTo(map);
+
+          marker.bindPopup(`
+            <div style="color: #000; padding: 8px;">
+              <h3 style="font-weight: bold; margin-bottom: 4px;">${city.city}</h3>
+              <p style="margin: 4px 0;"><strong>AQI:</strong> ${city.aqi}</p>
+              <p style="margin: 4px 0;"><strong>Quality:</strong> ${getAQICategory(city.aqi)}</p>
+              <p style="margin: 4px 0;"><strong>State:</strong> ${city.state}</p>
+            </div>
+          `);
+
+          markers.push(marker);
+        }
+      });
+    }
+
+    // ===== NEWS FUNCTIONALITY =====
+    const newsArticles = [
+      {
+        category: 'aqi',
+        title: 'Delhi Air Quality Deteriorates to \'Severe\' Category',
+        summary: 'The national capital's air quality index crossed 400 mark as pollution levels spiked during winter season. Authorities have implemented emergency measures.',
+        image: 'https://images.unsplash.com/photo-1611273426858-450d8e3c9fce?w=500',
+        date: '2025-11-12',
+        source: 'Environment Monitor'
+      },
+      {
+        category: 'pollution',
+        title: 'Industrial Emissions Continue to Impact Major Cities',
+        summary: 'New study reveals that industrial areas in Mumbai, Kolkata, and Chennai show 30% higher pollution levels compared to residential zones.',
+        image: 'https://images.unsplash.com/photo-1605664515998-ff1f5e6a1bce?w=500',
+        date: '2025-11-11',
+        source: 'Clean Air India'
+      },
+      {
+        category: 'climate',
+        title: 'India Commits to Net Zero Emissions by 2070',
+        summary: 'Government announces comprehensive climate action plan focusing on renewable energy, electric vehicles, and forest conservation.',
+        image: 'https://images.unsplash.com/photo-1473341304170-971dccb5ac1e?w=500',
+        date: '2025-11-10',
+        source: 'Climate Action News'
+      },
+      {
+        category: 'policy',
+        title: 'New Emission Standards for Vehicles to be Implemented',
+        summary: 'Ministry of Environment announces stricter BS-VII norms for all vehicles from 2026 to combat rising air pollution in urban areas.',
+        image: 'https://images.unsplash.com/photo-1449965408869-eaa3f722e40d?w=500',
+        date: '2025-11-09',
+        source: 'Policy Watch'
+      },
+      {
+        category: 'aqi',
+        title: 'Bangalore Records Best Air Quality Among Metro Cities',
+        summary: 'Tech capital maintains \'Good\' AQI category for 15 consecutive days, attributed to green cover and favorable weather conditions.',
+        image: 'https://images.unsplash.com/photo-1587474260584-136574528ed5?w=500',
+        date: '2025-11-08',
+        source: 'Metro Health'
+      },
+      {
+        category: 'pollution',
+        title: 'Stubble Burning Cases Drop by 40% in Punjab',
+        summary: 'State government's incentive program for farmers shows positive results as alternatives to crop burning gain traction.',
+        image: 'https://images.unsplash.com/photo-1500382017468-9049fed747ef?w=500',
+        date: '2025-11-07',
+        source: 'Agriculture Today'
+      },
+      {
+        category: 'climate',
+        title: 'Mumbai Implements City-Wide Tree Plantation Drive',
+        summary: 'BMC plans to plant 1 million trees across the city to improve air quality and combat urban heat island effect.',
+        image: 'https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?w=500',
+        date: '2025-11-06',
+        source: 'Green Mumbai'
+      },
+      {
+        category: 'policy',
+        title: 'Central Government Launches Air Quality Monitoring App',
+        summary: 'New mobile application provides real-time AQI data, health advisories, and pollution forecasts for 200+ Indian cities.',
+        image: 'https://images.unsplash.com/photo-1551650975-87deedd944c3?w=500',
+        date: '2025-11-05',
+        source: 'Tech Gov'
+      },
+      {
+        category: 'aqi',
+        title: 'Kolkata AQI Improves Post-Monsoon Season',
+        summary: 'City witnesses 25% reduction in particulate matter concentration after sustained rainfall and wind patterns.',
+        image: 'https://images.unsplash.com/photo-1524492412937-b28074a5d7da?w=500',
+        date: '2025-11-04',
+        source: 'Bengal Monitor'
+      }
+    ];
+
+    let currentNewsFilter = 'all';
+
+    function filterNews(category) {
+      currentNewsFilter = category;
+      
+      // Update filter button states
+      document.querySelectorAll('.news-filter-btn').forEach(btn => {
+        btn.classList.remove('active', 'btn-primary');
+        btn.classList.add('bg-slate-700/80');
+      });
+      
+      const activeBtn = document.querySelector(`[data-category="${category}"]`);
+      if (activeBtn) {
+        activeBtn.classList.add('active', 'btn-primary');
+        activeBtn.classList.remove('bg-slate-700/80');
+      }
+      
+      renderNews();
+    }
+
+    function renderNews() {
+      const newsGrid = document.getElementById('news-grid');
+      const filtered = currentNewsFilter === 'all' 
+        ? newsArticles 
+        : newsArticles.filter(article => article.category === currentNewsFilter);
+      
+      newsGrid.innerHTML = filtered.map((article, index) => `
+        <div class="news-card animate-in" style="animation-delay: ${index * 0.1}s">
+          <img src="${article.image}" alt="${article.title}" class="news-image" onerror="this.src='https://via.placeholder.com/500x200?text=Environment+News'">
+          <div class="news-content">
+            <span class="news-category">${article.category.toUpperCase()}</span>
+            <h3 class="news-title">${article.title}</h3>
+            <p class="news-summary">${article.summary}</p>
+            <div class="news-meta">
+              <span>📅 ${new Date(article.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+              <span>📰 ${article.source}</span>
+            </div>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    // ===== ENHANCED CITY CARDS WITH WEATHER INFO =====
+    function renderCityCards(cities) {
+      const grid = document.getElementById('city-grid');
+      grid.innerHTML = '';
+      
+      if (!cities || cities.length === 0) {
+        grid.innerHTML = '<p class="col-span-full text-center text-gray-400 py-12">No cities match your filter</p>';
+        return;
+      }
+
+      // Filter by region if needed
+      let filtered = cities;
+      if (currentFilter !== 'all') {
+        filtered = cities.filter(c => c.region === currentFilter);
+      }
+
+      if (filtered.length === 0) {
+        grid.innerHTML = '<p class="col-span-full text-center text-gray-400 py-12">No cities found for this region</p>';
+        return;
+      }
+
+      const sorted = filtered.sort((a, b) => (b.aqi || 0) - (a.aqi || 0));
+      
+      sorted.forEach((city, index) => {
+        const card = document.createElement('div');
+        card.className = 'themed-card city-card p-6 rounded-xl animate-in';
+        card.style.animationDelay = `${index * 0.05}s`;
+        card.onclick = () => showCityDetails(city);
+        
+        const aqiCategory = getAQICategory(city.aqi);
+        const aqiColor = getAQIColor(city.aqi);
+        
+        // Extract weather data from iaqi
+        const temp = city.iaqi?.t?.v || 'N/A';
+        const humidity = city.iaqi?.h?.v || 'N/A';
+        const wind = city.iaqi?.w?.v || 'N/A';
+        const pressure = city.iaqi?.p?.v || 'N/A';
+        
+        card.innerHTML = `
+          <div class="flex justify-between items-start mb-4">
+            <div>
+              <h3 class="text-lg font-bold">${city.city}</h3>
+              <p class="text-xs text-gray-400">${city.state} • ${city.region.toUpperCase()}</p>
+            </div>
+            <div class="text-2xl">${getWeatherEmoji(city.aqi)}</div>
+          </div>
+          
+          <div class="text-center mb-4">
+            <div class="text-5xl font-bold mb-2" style="color: ${aqiColor}">${city.aqi}</div>
+            <p class="text-sm font-semibold" style="color: ${aqiColor}">${aqiCategory}</p>
+            <p class="text-xs text-gray-500 mt-1">Main: ${city.dominentpol.toUpperCase()}</p>
+          </div>
+          
+          <div class="weather-info">
+            <div class="weather-item">
+              <span>🌡️</span>
+              <span>${temp}°C</span>
+            </div>
+            <div class="weather-item">
+              <span>💧</span>
+              <span>${humidity}%</span>
+            </div>
+            <div class="weather-item">
+              <span>💨</span>
+              <span>${wind} m/s</span>
+            </div>
+            <div class="weather-item">
+              <span>⏲️</span>
+              <span>${pressure} hPa</span>
+            </div>
+          </div>
+          
+          <div class="mt-4 pt-4 border-t border-gray-700">
+            <p class="text-xs text-gray-500">Last updated: ${new Date(city.time).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</p>
+          </div>
+        `;
+        
+        grid.appendChild(card);
+      });
+
+      updateStatistics(filtered);
+      
+      // Only show unavailable cities when showing all regions
+      if (currentFilter === 'all') {
+        renderUnavailableCities();
+      }
+    }
+
+    // ===== STATISTICS UPDATE =====
+    function updateStatistics(cities) {
+      const totalCities = cities.length;
+      const goodAQI = cities.filter(c => c.aqi <= 50).length;
+      const poorAQI = cities.filter(c => c.aqi >= 151).length;
+      const avgAQI = Math.round(cities.reduce((sum, c) => sum + c.aqi, 0) / totalCities);
+      
+      document.getElementById('stat-cities').textContent = totalCities;
+      document.getElementById('stat-good').textContent = goodAQI;
+      document.getElementById('stat-poor').textContent = poorAQI;
+      document.getElementById('stat-avg').textContent = avgAQI;
+    }
+
+    function getWeatherEmoji(aqi) {
+      if (aqi <= 50) return '🌤️';
+      if (aqi <= 100) return '⛅';
+      if (aqi <= 150) return '🌥️';
+      if (aqi <= 200) return '☁️';
+      if (aqi <= 300) return '🌫️';
+      return '😷';
+    }
+
+    // Initialize news on page load
+    document.addEventListener('DOMContentLoaded', () => {
+      renderNews();
+    });
+  </script>
+</body>
+</html>
+
+

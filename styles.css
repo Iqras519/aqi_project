@@ -1,0 +1,9 @@
+/* Smooth section transitions */
+.view-section { display: none; }
+.view-section.active { display: block; }
+
+/* Modal display */
+#api-key-modal.hidden { display: none; }
+#api-key-modal.flex { display: flex; }
+
+
